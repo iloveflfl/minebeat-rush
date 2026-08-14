@@ -1,0 +1,36 @@
+; MineBeat Rush - Godot 4.7 project
+; GDD 24: Godot 4.x + GDScript. Real 3D depth buffer, no fake-3D canvas renderer.
+
+config_version=5
+
+[application]
+
+config/name="MineBeat Rush"
+config/description="Collapse Action Puzzle - Stage 1: Desert Bridge"
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.7", "Forward Plus")
+config/icon="res://icon.svg"
+
+[autoload]
+
+GameSettings="*res://scripts/autoload/GameSettings.gd"
+AudioDirector="*res://scripts/autoload/AudioDirector.gd"
+BeatConductor="*res://scripts/autoload/BeatConductor.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[rendering]
+
+anti_aliasing/quality/msaa_3d=2
+anti_aliasing/quality/screen_space_aa=1
+environment/defaults/default_clear_color=Color(0.55, 0.66, 0.78, 1)
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
+
+[physics]
+
+common/physics_ticks_per_second=60

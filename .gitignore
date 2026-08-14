@@ -1,0 +1,8 @@
+# Godot 4
+.godot/
+/android/
+/captures/
+
+# Windows
+Thumbs.db
+desktop.ini
