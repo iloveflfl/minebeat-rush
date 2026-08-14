@@ -218,14 +218,14 @@ func _build_structure() -> void:
 ## GDD 16: the crack network that widens across damage stages 1-3.
 func _build_cracks() -> void:
 	var half := float(data.width) * Tuning.TILE * 0.5
-	# Cracks stop short of the clue row. A clue must never be read through a
-	# crack (GDD 15.3 / 30).
-	var span := maxf(Tuning.TILE, float(data.clue_row() - 1) * Tuning.TILE)
+	# Cracks stay behind the clue row and stay short, so a clue can never end up
+	# being read through one (GDD 15.3, and GDD 30 bans exactly this).
+	var span := float(maxi(0, data.clue_row() - 1)) * Tuning.TILE
 	var mt := _m("crack", Color(0.16, 0.13, 0.11), 1.0)
-	for i in 9:
+	for i in maxi(4, data.length):
 		var z := -_rng.randf_range(0.0, span)
 		var x := _rng.randf_range(-half, half)
-		var len_ := _rng.randf_range(1.2, 3.4)
+		var len_ := _rng.randf_range(0.9, 2.0)
 		var c := Greybox.mi(Greybox.box(Vector3(0.10, 0.06, len_)), mt, Vector3(x, 0.02, z))
 		c.rotation_degrees = Vector3(0, _rng.randf_range(-70, 70), 0)
 		c.scale = Vector3(1, 1, 0.25)

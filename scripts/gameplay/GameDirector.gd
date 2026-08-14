@@ -428,28 +428,34 @@ func _resolve_go() -> void:
 				float(d.width) * Tuning.TILE)
 	AudioDirector.play("sfx_collapse", 0.75)
 
-	cam.set_view(CameraDirector.View.LAUNCH)
+	cam.set_view(CameraDirector.View.GLIDE if launch.mode == LaunchController.Mode.GLIDE
+			else CameraDirector.View.LAUNCH)
 	_air_phase_fired = 0
 	state = State.GATE_AIR if next_index >= stage.sectors.size() else State.AIR
 
 
 ## GDD 6.2 / 11.1: the four air beats. Launch, rise, apex, accelerating fall.
 func _air_phase(phase: int) -> void:
+	if launch.mode == LaunchController.Mode.GLIDE:
+		cam.set_view(CameraDirector.View.GLIDE)
+		if phase == 1:
+			AudioDirector.play("sfx_wind_fall", 0.45)
+		elif phase == 3:
+			AudioDirector.play("sfx_wind_rise", 0.40)
+		return
+
 	match phase:
 		1:
 			cam.set_view(CameraDirector.View.AIR_RISE)
-			if launch.mode == LaunchController.Mode.LAUNCH:
-				anim.set_state(CharacterAnimator.State.LAUNCH, launch.grade)
+			anim.set_state(CharacterAnimator.State.LAUNCH, launch.grade)
 			AudioDirector.play("sfx_wind_rise", 0.55)
 		2:
 			cam.set_view(CameraDirector.View.GATE if state == State.GATE_AIR
 					else CameraDirector.View.APEX)
-			if launch.mode == LaunchController.Mode.LAUNCH:
-				anim.set_state(CharacterAnimator.State.APEX, launch.grade)
+			anim.set_state(CharacterAnimator.State.APEX, launch.grade)
 		3:
 			cam.set_view(CameraDirector.View.FALL)
-			if launch.mode == LaunchController.Mode.LAUNCH:
-				anim.set_state(CharacterAnimator.State.FALL, launch.grade)
+			anim.set_state(CharacterAnimator.State.FALL, launch.grade)
 			AudioDirector.play("sfx_wind_fall", 0.5)
 
 
@@ -540,7 +546,8 @@ func _process(_delta: float) -> void:
 				_resolve_go()
 			else:
 				_follow_deck()
-				hud.set_count(clampi(int(floor(elapsed)), 0, 3), false)
+				var pip := clampi(int(floor(elapsed)), 0, 3)
+				hud.set_count(pip, pip == 3)
 				if _auto_play:
 					_auto_step()
 
@@ -554,7 +561,7 @@ func _process(_delta: float) -> void:
 				_do_landing()
 			else:
 				player.position = launch.sample(beat)
-				hud.set_count(want_phase, false)
+				hud.set_count(want_phase, want_phase == 3)
 
 	_update_debug(beat)
 	_service_shots(beat)

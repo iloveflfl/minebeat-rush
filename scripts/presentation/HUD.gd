@@ -367,7 +367,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_pause"):
 		pause_toggled.emit(toggle_pause())
 		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("restart"):
+	elif event.is_action_pressed("restart") and (_pause.visible or _results.visible):
+		# Only from the options or results screen - a stray key press must never
+		# throw away a run in progress.
 		restart_requested.emit()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("debug_toggle"):

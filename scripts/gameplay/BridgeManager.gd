@@ -58,7 +58,7 @@ func build_intro_deck() -> BridgeSector:
 
 func ensure_range(center_index: int) -> void:
 	for i in range(center_index - LIVE_BEHIND, center_index + LIVE_AHEAD + 1):
-		if i < 0 or i >= stage.sectors.size() or _sectors.has(i):
+		if i < 0 or i >= stage.sectors.size() or sector(i) != null:
 			continue
 		var s := BridgeSector.new()
 		s.name = "Sector_%02d_%s" % [i, stage.sectors[i].id]
@@ -67,8 +67,14 @@ func ensure_range(center_index: int) -> void:
 		_sectors[i] = s
 
 
+## A collapsed sector frees itself once its debris has fallen out of sight, so
+## the lookup has to assume any entry may already be gone.
 func sector(index: int) -> BridgeSector:
-	return _sectors.get(index, null)
+	var s: Variant = _sectors.get(index, null)
+	if s == null or not is_instance_valid(s):
+		_sectors.erase(index)
+		return null
+	return s as BridgeSector
 
 
 func data_at(index: int) -> SectorData:
@@ -221,7 +227,8 @@ func gate_landing_position() -> Vector3:
 ## GDD 21.1 / 31.11: after the arrival the whole bridge comes down behind you.
 func collapse_everything_behind(from_index: int) -> void:
 	for i in _sectors.keys():
-		if i >= from_index:
-			(_sectors[i] as BridgeSector).collapse()
+		var s := sector(i)
+		if s != null and i >= from_index:
+			s.collapse()
 	if intro_sector != null and is_instance_valid(intro_sector):
 		intro_sector.collapse()

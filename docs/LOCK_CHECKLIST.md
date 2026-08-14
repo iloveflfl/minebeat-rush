@@ -76,6 +76,17 @@ GDD v1.0 §32.1 지시에 따라 [LOCK] 항목을 구현 체크리스트로 변�
 - [x] PlayerMotor 대시는 물리 impulse가 아닌 목표 셀 기반 authored movement
 - [x] LaunchController는 타이밍→궤적이 순수 함수 (`sample(beat)`) 로 재현 가능
 
+## 검증 방법
+
+| 무엇 | 어떻게 확인했나 |
+| --- | --- |
+| 숫자 법칙 / 유일해 / 50-50 거부 / 도달성 | `테스트.bat` — 54 어서션 전부 통과 |
+| 34섹터 체인 (모든 착지 열에서 도달 가능) | `Stage1Data.build()` 가 기동 시 재검증. 실패 시 게임이 뜨지 않음 |
+| 정점이 공중 2박에 고정 / 낙하 가속 / 판정 무관 | `test_launch_curve()` — 궤적을 직접 샘플링해 비교 |
+| 코어 루프 실주행 | `--sector N --auto` 자동 플레이로 34섹터 완주, 스크린샷 캡처 |
+| 카메라 좌우 불변 | `CameraDirector` 가 `rotation`에 yaw/roll을 아예 쓰지 않음 (코드 수준 불변식) |
+| 리듬이 대시를 막지 않음 | `PlayerMotor` 가 BeatConductor를 import/참조하지 않음 (코드 수준 불변식) |
+
 ## L14. Anti-Goals (§30) — 구현되지 않았음을 확인
 - [x] rhythm highway / HIT LINE UI 없음
 - [x] 대시 박자 제한 없음

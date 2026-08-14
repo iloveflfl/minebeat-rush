@@ -4,7 +4,21 @@ extends Node
 ## registered in code rather than baked into project.godot so that remapping is
 ## a first-class feature instead of an afterthought.
 
-const SAVE_PATH := "user://settings.cfg"
+## Settings live next to the project rather than in the OS user directory, so a
+## portable install on an external drive keeps everything on that drive. Falls
+## back to user:// if the project folder is not writable.
+var _save_path := ""
+
+
+func _resolve_save_path() -> String:
+	if _save_path != "":
+		return _save_path
+	var dir := ProjectSettings.globalize_path("res://user_data")
+	if DirAccess.make_dir_recursive_absolute(dir) == OK:
+		_save_path = dir.path_join("settings.cfg")
+	else:
+		_save_path = "user://settings.cfg"
+	return _save_path
 
 ## GDD 7.1 [LOCK]: three ground actions. "dash_back" exists only for the Act 0
 ## free-roam intro and is refused by PlayerMotor for the rest of the game.
@@ -85,12 +99,12 @@ func save() -> void:
 	cfg.set_value("audio", "music", music_volume)
 	cfg.set_value("audio", "sfx", sfx_volume)
 	cfg.set_value("input", "binds", binds)
-	cfg.save(SAVE_PATH)
+	cfg.save(_resolve_save_path())
 
 
 func _load() -> void:
 	var cfg := ConfigFile.new()
-	if cfg.load(SAVE_PATH) != OK:
+	if cfg.load(_resolve_save_path()) != OK:
 		return
 	shake_scale = cfg.get_value("accessibility", "shake_scale", shake_scale)
 	adjacency_hint_enabled = cfg.get_value("accessibility", "adjacency_hint", adjacency_hint_enabled)

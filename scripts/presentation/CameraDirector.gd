@@ -10,7 +10,7 @@ extends Node3D
 ##   * during a reading phase, shake is driven to zero and dust is suppressed
 ##     (GDD 13, 23) - a nice explosion must never cover a number (GDD 15.3).
 
-enum View { OPENING, FREE, GROUND, LAUNCH, AIR_RISE, APEX, FALL, LANDING, GATE }
+enum View { OPENING, FREE, GROUND, LAUNCH, AIR_RISE, APEX, FALL, LANDING, GLIDE, GATE }
 
 ## height above the deck, distance behind the subject, how far ahead it aims, fov
 ## GROUND and LANDING are recomputed from `frame_depth` so a 3-row sector and a
@@ -32,6 +32,12 @@ const VIEWS := {
 	View.APEX:      {"h": 9.0,  "back": 13.0, "ahead": 12.0, "fov": 66.0, "snap": 2.6},
 	View.FALL:      {"h": 11.0, "back": 13.0, "ahead": 14.0, "fov": 64.0, "snap": 3.4},
 	View.LANDING:   {"h": 16.0, "back": 8.0,  "ahead": 7.0,  "fov": 42.0, "snap": 6.5},
+	# GDD 10.2: a scarf glide sags well below the deck, and the sector it just
+	# left is falling through the same space. The glide view sits high enough to
+	# stay clear of the debris and looks down at the character, so failing is a
+	# readable move of its own rather than a screenful of rubble.
+	View.GLIDE:     {"h": 15.0, "back": 12.0, "ahead": 8.0,  "fov": 66.0, "snap": 3.0,
+					 "aim_y": -3.0},
 	# Looks *up* at the gate, so the thing you have been running toward finally
 	# fills the frame (GDD 21.1 third "wow" moment).
 	View.GATE:      {"h": 13.0, "back": 34.0, "ahead": 20.0, "fov": 64.0, "snap": 1.8,

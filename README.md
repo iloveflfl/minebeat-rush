@@ -5,6 +5,13 @@ GDD v1.0 (`MineBeat_Rush_GDD_v1.0.md`) 를 정본으로 구현한 Godot 4.7 프�
 > 무너지는 사막의 초장대 석교 위에서, 지뢰찾기 숫자로 탈출용 지뢰를 찾아 자유 대시로 도달하고,
 > GO 순간 그 지뢰를 일부러 밟아 폭발 추진력으로 끊어진 다리를 건넌다.
 
+| | |
+| --- | --- |
+| ![오프닝](docs/screenshots/1-opening.png) | ![첫 폭발](docs/screenshots/2-first-blast.png) |
+| 오프닝 — 목적지 Sun Gate가 처음부터 보인다 | 첫 지뢰 사고 — 죽지 않고 날아간다. 뒤 방향 표식이 깨진다 |
+| ![3열](docs/screenshots/3-three-wide.png) | ![도착](docs/screenshots/4-sun-gate.png) |
+| 3열 기본 퍼즐 — `1 1 1` 이면 가운데가 지뢰 | Sun Gate 도착 |
+
 ---
 
 ## 실행
@@ -30,7 +37,7 @@ S:\GameDev\Godot\Godot_v4.7-stable_win64.exe --path S:\GameDev\MineBeatRush
 | `→` / `D` | 화면 기준 오른쪽 한 칸 대시 |
 | `↓` / `S` | 뒤로 — **Act 0 자유이동 구간에서만.** 첫 폭발 이후 영구 삭제 |
 | `Esc` | 옵션 (흔들림 / 힌트 / 볼륨 / 키 재설정) |
-| `R` | 스테이지 재시작 |
+| `R` | 스테이지 재시작 — 옵션 화면 또는 결과 화면에서만 |
 | `F3` | 개발용 디버그 오버레이 |
 
 대시는 **박자와 무관하게 언제든** 입력된다. 리듬은 다리의 수명을 정할 뿐 입력을 막지 않는다.
