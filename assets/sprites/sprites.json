@@ -75,6 +75,51 @@
     "faceonly_worried": {
       "w": 276,
       "h": 148
+    },
+    "rig_head_happy": {
+      "w": 285,
+      "h": 150
+    },
+    "rig_head_surprised": {
+      "w": 285,
+      "h": 150
+    },
+    "rig_head_determined": {
+      "w": 285,
+      "h": 150
+    },
+    "rig_head_worried": {
+      "w": 285,
+      "h": 150
+    },
+    "rig_ear_l": {
+      "w": 134,
+      "h": 130
+    },
+    "rig_ear_r": {
+      "w": 135,
+      "h": 130
+    }
+  },
+  "rig": {
+    "rig_ear_l": {
+      "w": 134,
+      "h": 130,
+      "pivot_x": 67.0,
+      "pivot_y": 130.0
+    },
+    "rig_ear_r": {
+      "w": 135,
+      "h": 130,
+      "pivot_x": 201.5,
+      "pivot_y": 130.0
+    },
+    "_frame": {
+      "w": 269,
+      "h": 267,
+      "split": 0.44,
+      "head_w": 285,
+      "head_h": 150
     }
   }
 }

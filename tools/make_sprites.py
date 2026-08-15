@@ -228,6 +228,69 @@ def face_only(rgba):
     return out[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
 
 
+## Where the ears stop and the head starts, as a fraction of an expression head.
+## All four are drawn at the same scale (their heights differ by 4 px), so this
+## is a measurement rather than a guess.
+EAR_SPLIT = 0.44
+
+
+def cut_rig_parts(faces):
+    """Split the expression heads into the pieces a 2D cutout rig needs.
+
+    Paper Mario characters are flat drawings that are *jointed*: the ears, the
+    head and the body are separate pieces that rotate against each other. That
+    is the only way a painted character can hold a real pose - and it is why a
+    single flat sprite looked dead.
+
+    Everything here is cut from the same source frame (the expression heads), so
+    the ear pivots are exact in head-local coordinates instead of being eyeballed
+    in the engine.
+    """
+    out = {}
+    # Head plates: bottom part of each expression, padded onto one shared canvas
+    # so any expression can be swapped onto the same quad.
+    heads = {}
+    for name, rgba in faces.items():
+        h = rgba.shape[0]
+        head = rgba[int(h * EAR_SPLIT):]
+        rows = np.nonzero((head[..., 3] > 0).any(axis=1))[0]
+        cols = np.nonzero((head[..., 3] > 0).any(axis=0))[0]
+        heads[name] = head[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
+
+    cw = max(a.shape[1] for a in heads.values())
+    ch = max(a.shape[0] for a in heads.values())
+    for name, a in heads.items():
+        canvas = np.zeros((ch, cw, 4), np.uint8)
+        x = (cw - a.shape[1]) // 2
+        y = ch - a.shape[0]                      # bottom aligned: chins line up
+        canvas[y:y + a.shape[0], x:x + a.shape[1]] = a
+        out[f"rig_head_{name}"] = canvas
+
+    # Ears, from the neutral head. Left and right are simply the two halves of
+    # the region above the split.
+    src = faces["happy"]
+    h, w = src.shape[:2]
+    band = src[:int(h * EAR_SPLIT) + int(h * 0.05)]
+    meta = {}
+    for side, sl in (("l", slice(0, w // 2)), ("r", slice(w // 2, w))):
+        part = band[:, sl]
+        rows = np.nonzero((part[..., 3] > 0).any(axis=1))[0]
+        cols = np.nonzero((part[..., 3] > 0).any(axis=0))[0]
+        x0 = (0 if side == "l" else w // 2) + int(cols[0])
+        x1 = (0 if side == "l" else w // 2) + int(cols[-1]) + 1
+        y0, y1 = int(rows[0]), int(rows[-1]) + 1
+        out[f"rig_ear_{side}"] = band[y0:y1, x0:x1]
+        # Pivot: the middle of the ear's base, in source-image pixels.
+        meta[f"rig_ear_{side}"] = {
+            "w": x1 - x0, "h": y1 - y0,
+            "pivot_x": (x0 + x1) * 0.5, "pivot_y": float(y1),
+        }
+
+    meta["_frame"] = {"w": int(w), "h": int(h), "split": float(EAR_SPLIT),
+                      "head_w": int(cw), "head_h": int(ch)}
+    return out, meta
+
+
 def save(name, rgba):
     path = os.path.join(OUT, name + ".png")
     Image.fromarray(rgba, "RGBA").save(path)
@@ -298,6 +361,19 @@ def main():
                 manifest["parts"][f"faceonly_{name}"] = {
                     "w": int(fo.shape[1]), "h": int(fo.shape[0])}
                 contact.append(fo)
+
+    # --- the 2D cutout rig ---------------------------------------------------
+    faces = {}
+    for n in FACE_NAMES:
+        p = os.path.join(OUT, f"face_{n}.png")
+        faces[n] = np.asarray(Image.open(p).convert("RGBA"))
+    parts, rig_meta = cut_rig_parts(faces)
+    for n, a in parts.items():
+        save(n, a)
+        manifest["parts"][n] = {"w": int(a.shape[1]), "h": int(a.shape[0])}
+    manifest["rig"] = rig_meta
+    contact += [parts["rig_ear_l"], parts["rig_head_happy"], parts["rig_ear_r"],
+                parts["rig_head_determined"]]
 
     with open(os.path.join(OUT, "sprites.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
