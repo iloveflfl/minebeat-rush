@@ -1,4 +1,4 @@
-﻿class_name CharacterAnimator
+class_name CharacterAnimator
 extends Node3D
 
 ## GDD 14 - the fennec, done the way Paper Mario does a character: the painted
@@ -26,7 +26,9 @@ const SPRITES := "res://assets/sprites/"
 const FIGURE_H := 2.35
 ## How far the head's chin sinks into the body's collar, as a fraction of the
 ## head's height. Hides the joint.
-const NECK_OVERLAP := 0.22
+## The head plate ends in the painted collar and the body plate begins with one.
+## Sinking the head this far in lands red on red, so the join never shows.
+const NECK_OVERLAP := 0.07
 const SCARF_SEGMENTS := 9
 const SCARF_LEN := 0.17
 
@@ -110,15 +112,16 @@ func _load_art() -> void:
 	# One scale for every piece, so the cut-out reassembles at exactly the
 	# proportions it was drawn at.
 	var body_h := float((_meta.get("body_front", {}) as Dictionary).get("h", 309))
-	var head_h := float((_meta.get("rig_head_happy", {}) as Dictionary).get("h", 150))
-	var ear_h := float((_meta.get("rig_ear_l", {}) as Dictionary).get("h", 130))
-	var stack := body_h + (head_h * (1.0 - NECK_OVERLAP)) + ear_h * 0.86
+	var head_h := float((_meta.get("rig_head_happy", {}) as Dictionary).get("h", 267))
+	# The head plate carries its own ears now, so the figure is body plus head -
+	# adding the ear piece again would count them twice and shrink everything.
+	var stack := body_h + head_h * (1.0 - NECK_OVERLAP)
 	_px = FIGURE_H / maxf(1.0, stack)
 
 
 const PAPER_EDGE := preload("res://shaders/paper_edge.gdshader")
 ## How far the card sticks out past the drawing, as a fraction of the piece.
-const EDGE_GROW := 0.045
+const EDGE_GROW := 0.0
 ## How far the card sits behind the drawing. Enough to catch the light as a
 ## separate surface, small enough that the piece still reads as one object.
 const EDGE_DEPTH := 0.020
@@ -133,18 +136,24 @@ const EDGE_DEPTH := 0.020
 func _paper(tex: Texture2D, size: Vector2) -> Node3D:
 	var holder := Node3D.new()
 
-	var back := MeshInstance3D.new()
-	var bq := QuadMesh.new()
-	bq.size = size * (1.0 + EDGE_GROW)
-	back.mesh = bq
-	var bm := ShaderMaterial.new()
-	bm.shader = PAPER_EDGE
-	bm.set_shader_parameter("shape", tex)
-	bm.set_shader_parameter("paper_color", Color(1.0, 0.985, 0.95))
-	back.material_override = bm
-	back.position = Vector3(0, 0, -EDGE_DEPTH)
-	back.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	holder.add_child(back)
+	# The white card is off. Paper Mario needs it because its art has no drawn
+	# outline of its own - the card *is* the line. This artwork already carries a
+	# heavy black ink outline, so the card had nothing to add and plenty to break:
+	# it grew past the plate's hidden bottom edge and drew a pale seam across the
+	# character's collar. The drawn outline does the job the card was hired for.
+	if EDGE_GROW > 0.0:
+		var back := MeshInstance3D.new()
+		var bq := QuadMesh.new()
+		bq.size = size * (1.0 + EDGE_GROW)
+		back.mesh = bq
+		var bm := ShaderMaterial.new()
+		bm.shader = PAPER_EDGE
+		bm.set_shader_parameter("shape", tex)
+		bm.set_shader_parameter("paper_color", Color(1.0, 0.97, 0.90))
+		back.material_override = bm
+		back.position = Vector3(0, 0, -EDGE_DEPTH)
+		back.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		holder.add_child(back)
 
 	var m := StandardMaterial3D.new()
 	m.albedo_texture = tex
@@ -201,21 +210,22 @@ func _build() -> void:
 	# The pivots come out of the cutting tool in source-image pixels, so they
 	# land exactly where the ears were drawn rather than being eyeballed here.
 	var frame: Dictionary = _rig_meta.get("_frame", {})
-	var fw := float(frame.get("w", 285))
+	var fw: float = float(frame.get("head_w", 288))
 	for side in ["l", "r"]:
 		var key: String = "rig_ear_" + str(side)
 		var es := _size_of(key)
 		var pm: Dictionary = _rig_meta.get(key, {})
-		# The pivot sits *inside* the skull, not on the crown. An ear cut from a
-		# sheet has a straight bottom edge; hinging it at the top of the head
-		# leaves that edge sitting on the silhouette where it reads as a
-		# severed ear. Hinged low and drawn behind, the head's own painted ear
-		# roots cover the cut - which is how a paper doll is pinned together.
+		# Placed exactly where the ear was painted. The cutting tool reports the
+		# pivot on the same shared canvas as the head plate, so this is a
+		# measurement rather than a fraction that has to be eyeballed.
+		# In front of the plate, because the articulated ear is covering the
+		# painted one underneath it (see make_sprites.cut_rig_parts).
+		var frame_h := float(frame.get("head_h", 267))
 		var pivot := Node3D.new()
 		pivot.position = Vector3(
 			(float(pm.get("pivot_x", fw * 0.5)) - fw * 0.5) * _px,
-			hs.y * 0.52,
-			-0.008)
+			(frame_h - float(pm.get("pivot_y", frame_h * 0.44))) * _px - hs.y * 0.5,
+			0.006)
 		_head.add_child(pivot)
 		var quad: Node3D = _paper(_tex.get(key), es)
 		quad.position = Vector3(0, es.y * 0.5, 0)
@@ -223,7 +233,11 @@ func _build() -> void:
 		_ears.append(pivot)
 
 	_build_shadow()
-	_build_scarf()
+	# No simulated ribbon any more. The scarf is *painted* - it is part of the
+	# body and head plates, with its own outline and shading - and an untextured
+	# red box chain flying across that artwork looked exactly like what it was.
+	# Anything the ribbon was carrying (speed, the glide) is now carried by the
+	# poses and by the body-art swap.
 	_s_ear.snap(1.0)
 
 
@@ -251,7 +265,7 @@ func _build_scarf() -> void:
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	for i in SCARF_SEGMENTS:
-		var w := lerpf(0.34, 0.15, float(i) / float(SCARF_SEGMENTS))
+		var w := lerpf(0.20, 0.07, float(i) / float(SCARF_SEGMENTS))
 		var seg := MeshInstance3D.new()
 		var b := BoxMesh.new()
 		b.size = Vector3(w, 0.05, SCARF_LEN)
@@ -331,9 +345,11 @@ func _set_body(pose: String) -> void:
 	var art := _art_of(_body)
 	(art.mesh as QuadMesh).size = bs
 	(art.material_override as StandardMaterial3D).albedo_texture = _tex[key]
+	# Only present while the paper card is enabled.
 	var back := _body.get_child(0) as MeshInstance3D
-	(back.mesh as QuadMesh).size = bs * (1.0 + EDGE_GROW)
-	(back.material_override as ShaderMaterial).set_shader_parameter("shape", _tex[key])
+	if back != null and back.material_override is ShaderMaterial:
+		(back.mesh as QuadMesh).size = bs * (1.0 + EDGE_GROW)
+		(back.material_override as ShaderMaterial).set_shader_parameter("shape", _tex[key])
 	_body.position = Vector3(0, bs.y * 0.5, 0)
 	# The head rides on top of whichever body is up, so the collar keeps meeting
 	# the chin no matter which one that is.
@@ -586,7 +602,7 @@ func _follow_through(dt: float) -> void:
 		# at the apex and on a hard landing.
 		var base := lerpf(46.0, -6.0, clampf(_s_ear.v * 0.5 + 0.5, 0.0, 1.0))
 		var twitch := sin(_time * 5.4 + float(i) * 1.7) * 1.6
-		_ears[i].rotation_degrees.z = sx * (base + _s_fan.v * 34.0) + lag * 0.45 + twitch
+		_ears[i].rotation_degrees.z = clampf(sx * (base * 0.30 + _s_fan.v * 15.0) + lag * 0.22 + twitch, -19.0, 19.0)
 
 
 func _update_scarf(dt: float) -> void:
@@ -639,6 +655,9 @@ func _update_scarf(dt: float) -> void:
 		_scarf[i].global_position = mid
 		_scarf[i].look_at(mid + dir, up, true)
 	_scarf[0].visible = false
+
+
+
 
 
 

@@ -247,24 +247,39 @@ def cut_rig_parts(faces):
     in the engine.
     """
     out = {}
-    # Head plates: bottom part of each expression, padded onto one shared canvas
-    # so any expression can be swapped onto the same quad.
-    heads = {}
-    for name, rgba in faces.items():
-        h = rgba.shape[0]
-        head = rgba[int(h * EAR_SPLIT):]
-        rows = np.nonzero((head[..., 3] > 0).any(axis=1))[0]
-        cols = np.nonzero((head[..., 3] > 0).any(axis=0))[0]
-        heads[name] = head[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
+    # Head plates keep their WHOLE silhouette, ears included.
+    #
+    # Cutting the head off below the ears looked correct in isolation and was
+    # wrong on screen: the plate's top edge is then a straight horizontal cut
+    # through the ear roots, and that cut draws in front of the real ear pieces
+    # as a hard line across both ears. A paper doll never has a straight edge in
+    # the middle of a shape. So the plate stays whole, and the articulated ears
+    # are laid on top of the painted ones - which is also why their travel is
+    # limited in the rig: they are covering their own originals.
+    # ...but the plate does stop *inside* the collar. The drawn collar has an
+    # outline all the way round, and leaving its bottom edge on meant that black
+    # line sat across the chest as a visible seam. Cut above it and the body's
+    # own collar simply continues underneath.
+    trimmed = {}
+    for name, a in faces.items():
+        h = a.shape[0]
+        m = np.zeros(a.shape[:2], bool)
+        m[:] = a[..., 3] > 0
+        collar = scarf_row(a[..., :3].astype(np.int16), m, 0, h, 0, a.shape[1],
+                           (0.55, 1.0))
+        cut_at = h if collar is None else min(h, collar + int(h * 0.07))
+        trimmed[name] = a[:cut_at]
 
-    cw = max(a.shape[1] for a in heads.values())
-    ch = max(a.shape[0] for a in heads.values())
-    for name, a in heads.items():
+    cw = max(t.shape[1] for t in trimmed.values())
+    ch = max(t.shape[0] for t in trimmed.values())
+    offsets = {}
+    for name, a in trimmed.items():
         canvas = np.zeros((ch, cw, 4), np.uint8)
         x = (cw - a.shape[1]) // 2
-        y = ch - a.shape[0]                      # bottom aligned: chins line up
+        y = 0                                    # top aligned: ear tips line up
         canvas[y:y + a.shape[0], x:x + a.shape[1]] = a
         out[f"rig_head_{name}"] = canvas
+        offsets[name] = (x, y)
 
     # Ears, from the neutral head. Left and right are simply the two halves of
     # the region above the split.
@@ -280,10 +295,14 @@ def cut_rig_parts(faces):
         x1 = (0 if side == "l" else w // 2) + int(cols[-1]) + 1
         y0, y1 = int(rows[0]), int(rows[-1]) + 1
         out[f"rig_ear_{side}"] = band[y0:y1, x0:x1]
-        # Pivot: the middle of the ear's base, in source-image pixels.
+        # Pivot: the middle of the ear's base, expressed on the shared head
+        # canvas so the engine can place it exactly where it was painted
+        # instead of guessing a fraction.
+        ox, oy = offsets["happy"]
         meta[f"rig_ear_{side}"] = {
             "w": x1 - x0, "h": y1 - y0,
-            "pivot_x": (x0 + x1) * 0.5, "pivot_y": float(y1),
+            "pivot_x": (x0 + x1) * 0.5 + ox,
+            "pivot_y": float(y1) + oy,
         }
 
     meta["_frame"] = {"w": int(w), "h": int(h), "split": float(EAR_SPLIT),

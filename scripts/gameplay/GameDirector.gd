@@ -120,6 +120,7 @@ func _ready() -> void:
 	player.dash_rejected.connect(_on_dash_rejected)
 
 	_parse_dev_args()
+	cam.closeup = _closeup
 	if _dev_sector >= 0:
 		_dev_jump_to_sector(_dev_sector)
 	else:
@@ -134,6 +135,7 @@ func _ready() -> void:
 
 var _dev_sector := -1
 var _auto_play := false
+var _closeup := 0.0
 var _shot_dir := ""
 var _shot_beat_step := 0.75
 var _shots_left := 0
@@ -164,6 +166,9 @@ func _parse_dev_args() -> void:
 					_shot_beat_step = float(args[i + 1])
 			"--auto":
 				_auto_play = true
+			"--closeup":
+				if i + 1 < args.size():
+					_closeup = float(args[i + 1])
 
 
 ## Development auto-play: solves the sector with the same MineGrid the level
@@ -713,6 +718,8 @@ func _restart() -> void:
 	AudioDirector.set_paused(false)
 	BeatConductor.stop()
 	get_tree().reload_current_scene()
+
+
 
 
 

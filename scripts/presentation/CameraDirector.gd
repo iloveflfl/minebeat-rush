@@ -90,7 +90,17 @@ func impulse(amount: float, decay: float = 7.0) -> void:
 	_shake_decay = decay
 
 
+## Development only: locks the camera onto the character at inspection range so
+## a defect can actually be *seen*. Claiming a fix from a screenshot where the
+## character is forty pixels tall is how three separate bugs got signed off
+## while still being broken.
+var closeup := 0.0
+
+
 func _params(v: View) -> Dictionary:
+	if closeup > 0.0:
+		return {"h": 0.9 * closeup, "back": 2.6 * closeup, "ahead": 0.0,
+				"fov": 32.0, "snap": 18.0, "aim_y": 1.1 * closeup}
 	var cfg: Dictionary = (VIEWS[v] as Dictionary).duplicate()
 	if v == View.GROUND or v == View.LANDING:
 		cfg["h"] = 10.5 + frame_depth * 0.26
