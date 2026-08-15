@@ -37,10 +37,18 @@ static func is_mobile() -> bool:
 
 
 ## True on the OpenGL Compatibility renderer, which is what the web build runs.
-## It has no RenderingDevice, and it lands noticeably brighter than Forward+ for
-## the same Environment - so the exposure needs its own trim.
+## It lands noticeably brighter than Forward+ for the same Environment, and it
+## has no screen-space AA, so both need trimming.
+##
+## Asked by name rather than inferred from RenderingServer.get_rendering_device()
+## being null - that returns a valid object on Compatibility too, so the earlier
+## check silently reported "not compatibility" everywhere.
+static func rendering_method() -> String:
+	return RenderingServer.get_current_rendering_method()
+
+
 static func is_compatibility() -> bool:
-	return RenderingServer.get_rendering_device() == null
+	return rendering_method() == "gl_compatibility"
 
 
 ## Multiplier for "how many decorative props to spawn".
@@ -74,4 +82,4 @@ static func render_scale() -> float:
 
 
 static func describe() -> String:
-	return "MOBILE" if is_mobile() else "DESKTOP"
+	return "%s / %s" % ["MOBILE" if is_mobile() else "DESKTOP", rendering_method()]
