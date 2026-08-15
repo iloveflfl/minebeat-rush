@@ -153,7 +153,7 @@ func _build_canyon() -> void:
 				for p in rng.randi_range(1, 3):
 					_add_palm(Vector3(sx + rng.randf_range(-8, 8), sy + sh * 0.5,
 							z + rng.randf_range(-10, 10)), rng)
-			z -= rng.randf_range(42.0, 84.0)
+			z -= rng.randf_range(42.0, 84.0) / Quality.prop_density()
 
 	_build_distant_arches(far_z, rng)
 
@@ -191,7 +191,7 @@ func _build_distant_arches(far_z: float, rng: RandomNumberGenerator) -> void:
 			arch.add_child(Greybox.mi(Greybox.box(Vector3(46.0, 4.0, 13.0)), m,
 					Vector3(rng.randf_range(-90, 90), 5.5, 0)))
 		_world.add_child(arch)
-		z -= rng.randf_range(190.0, 320.0)
+		z -= rng.randf_range(190.0, 320.0) / Quality.prop_density()
 		idx += 1
 
 
@@ -365,4 +365,6 @@ func collapse_everything_behind(from_index: int) -> void:
 			s.collapse()
 	if intro_sector != null and is_instance_valid(intro_sector):
 		intro_sector.collapse()
+
+
 

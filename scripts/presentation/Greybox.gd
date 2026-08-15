@@ -81,7 +81,13 @@ static func toon(color: Color, opts: Dictionary = {}) -> ShaderMaterial:
 	m.set_shader_parameter("grade", opts.get("grade", 0.10))
 	if color.a < 1.0:
 		m.render_priority = 1
-	var line: float = opts.get("outline", 2.6)
+	# The ink is a whole extra draw pass per object. On a phone the background
+	# layers give it up entirely - they are the cheapest thing to drop and the
+	# least missed, since GDD 15.3 wants them carrying the least line weight
+	# anyway.
+	var line: float = float(opts.get("outline", 2.6)) * Quality.ink_scale()
+	if Quality.is_mobile() and line < 2.4:
+		line = 0.0
 	if line > 0.0 and color.a >= 1.0:
 		var o := ShaderMaterial.new()
 		o.shader = OUTLINE_SHADER

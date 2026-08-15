@@ -15,12 +15,17 @@ Run:  python tools/gen_audio.py
 
 import json
 import os
+import shutil
+import subprocess
 import wave
 
 import numpy as np
 from scipy.signal import lfilter
 
 SR = 22050
+
+## The music stems, in the order AudioDirector expects them.
+STEMS = ["drums", "bass", "lead", "atmos", "drive"]
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -463,5 +468,38 @@ for nm, sig in [
     ("sfx_gate.wav", sfx_gate()),
 ]:
     save(nm, sig, peak=0.9)
+
+
+# ----------------------------------------------------------------------------
+# web/mobile delivery: the stems are ~8 MB each as WAV, which is fine off a
+# local disk and absurd over a phone connection. Vorbis at 22 kHz mono holds up
+# perfectly for this material and cuts the music down by roughly 20x.
+# ----------------------------------------------------------------------------
+
+def to_ogg(name, quality=3):
+    src = os.path.join(OUT, name + ".wav")
+    dst = os.path.join(OUT, name + ".ogg")
+    if not os.path.exists(src):
+        return
+    r = subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-i", src,
+         "-c:a", "libvorbis", "-q:a", str(quality), dst],
+        capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"  ! ffmpeg failed for {name}: {r.stderr.strip()[:200]}")
+        return
+    os.remove(src)
+    for stale in (src + ".import",):
+        if os.path.exists(stale):
+            os.remove(stale)
+    print(f"  {name + '.ogg':26s} {os.path.getsize(dst) / 1024 / 1024:6.2f} MB")
+
+
+if shutil.which("ffmpeg"):
+    print("music -> ogg (web delivery):")
+    for s in STEMS:
+        to_ogg("music_" + s)
+else:
+    print("ffmpeg not found - music stays as WAV (too large for a web build)")
 
 print("done.")

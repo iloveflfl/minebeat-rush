@@ -49,8 +49,22 @@ var _last_grade := LaunchController.Grade.PERFECT
 var _hinted_sector := -1
 
 
+## GDD 25.1: presentation only. The sector chain, the beat grid and the dash
+## budget are identical on every tier - a phone plays exactly the same stage.
+func _apply_quality_tier() -> void:
+	var vp := get_viewport()
+	vp.msaa_3d = Quality.msaa()
+	vp.scaling_3d_scale = Quality.render_scale()
+	# Screen-space AA does not exist on the Compatibility renderer the web build
+	# uses, and asking for it there is just a warning per frame.
+	vp.screen_space_aa = (Viewport.SCREEN_SPACE_AA_DISABLED if Quality.is_mobile()
+			else Viewport.SCREEN_SPACE_AA_FXAA)
+	print("MineBeat Rush - quality tier: %s" % Quality.describe())
+
+
 func _ready() -> void:
 	randomize()
+	_apply_quality_tier()
 	_build_environment()
 
 	stage = Stage1Data.build(BeatConductor.tempo)
@@ -83,6 +97,11 @@ func _ready() -> void:
 	cam.name = "Camera"
 	add_child(cam)
 	cam.target = player
+
+	# GDD 23 / 33: the same three directions, reachable with a thumb.
+	var touch := TouchInput.new()
+	touch.name = "Touch"
+	add_child(touch)
 
 	hud = HUD.new()
 	hud.name = "HUD"
@@ -252,6 +271,16 @@ func _build_environment() -> void:
 	env.adjustment_contrast = 1.04
 	env.adjustment_brightness = 1.02
 
+	if Quality.is_compatibility():
+		# The Compatibility renderer applies tonemapping and glow differently and
+		# comes out hot. Trimmed here rather than in the palette so the desktop
+		# and web builds keep the same authored colours.
+		env.ambient_light_energy *= 0.72
+		env.glow_intensity *= 0.45
+		env.fog_density *= 0.55
+		env.adjustment_brightness = 0.94
+		env.adjustment_saturation = 1.02
+
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -264,7 +293,8 @@ func _build_environment() -> void:
 	sun.shadow_blur = 0.6
 	sun.shadow_bias = 0.06
 	sun.shadow_normal_bias = 3.0
-	sun.directional_shadow_max_distance = 130.0
+	sun.directional_shadow_max_distance = Quality.shadow_distance()
+	sun.shadow_enabled = not Quality.is_mobile()
 	add_child(sun)
 
 	var fill := DirectionalLight3D.new()
@@ -619,7 +649,7 @@ func _follow_deck() -> void:
 
 
 func _update_debug(beat: float) -> void:
-	if not hud.show_debug:
+	if hud == null or not hud.show_debug:
 		return
 	var sid := "-"
 	if _sector_index >= 0 and _sector_index < stage.sectors.size():
@@ -668,5 +698,6 @@ func _restart() -> void:
 	AudioDirector.set_paused(false)
 	BeatConductor.stop()
 	get_tree().reload_current_scene()
+
 
 

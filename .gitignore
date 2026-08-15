@@ -7,3 +7,7 @@
 # Windows
 Thumbs.db
 desktop.ini
+
+# built web bundle (published to the gh-pages branch instead)
+/build/
+

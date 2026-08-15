@@ -128,7 +128,7 @@ func _push_palette(f: float) -> void:
 func _build_clouds() -> void:
 	var white := Greybox.mat(Greybox.C_CLOUD, 1.0, 0.0, 0.10, 0.0)
 	var shade := Greybox.mat(Color(0.86, 0.90, 0.99), 1.0, 0.0, 0.04, 0.0)
-	for i in 34:
+	for i in int(34 * Quality.prop_density()):
 		var cloud := Node3D.new()
 		var far := _rng.randf_range(160.0, 460.0)
 		cloud.position = Vector3(
@@ -155,7 +155,7 @@ func _build_clouds() -> void:
 func _build_floaters() -> void:
 	var silk := [Greybox.C_FLOWER_A, Greybox.C_BANNER, Greybox.C_FLOWER_B,
 			Color(0.55, 0.85, 0.55), Color(0.98, 0.55, 0.35)]
-	for i in 46:
+	for i in int(46 * Quality.prop_density()):
 		var n := Node3D.new()
 		var col: Color = silk[i % silk.size()]
 		var r := _rng.randf_range(1.1, 2.6)
@@ -182,7 +182,7 @@ func _build_floaters() -> void:
 ## point is that something alive moves through the frame every few seconds.
 func _build_birds() -> void:
 	var body := Greybox.mat(Color(0.28, 0.26, 0.36))
-	for i in 22:
+	for i in int(22 * Quality.prop_density()):
 		var flock := Node3D.new()
 		for b in _rng.randi_range(3, 6):
 			var bird := Node3D.new()
@@ -209,7 +209,7 @@ func _build_birds() -> void:
 ## quads that only exist to put motion between the player and the far wall.
 func _build_sand_ribbons() -> void:
 	var haze := Greybox.mat(Color(1.0, 0.93, 0.74, 0.5), 1.0, 0.0, 0.5, 0.0)
-	for i in 26:
+	for i in int(26 * Quality.prop_density()):
 		var r := Greybox.mi(Greybox.box(Vector3(_rng.randf_range(14.0, 40.0), 0.5, 1.2)), haze)
 		r.position = Vector3(_rng.randf_range(-80, 80), _rng.randf_range(-55, 14),
 				-_rng.randf_range(10.0, _span))
@@ -256,5 +256,6 @@ func _process(delta: float) -> void:
 		var base3: Vector3 = r["base"]
 		n3.position.x = wrapf(base3.x + _time * float(r["speed"]), -110.0, 110.0)
 		n3.position.y = base3.y + sin(_time * 0.6 + float(r["phase"])) * 1.4
+
 
 

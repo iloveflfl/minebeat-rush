@@ -1,4 +1,4 @@
-extends Node
+﻿extends Node
 
 ## GDD 17 + 25: music, structural sound, explosions, character foley, mix state.
 ##
@@ -39,7 +39,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	for s in STEMS:
 		var p := AudioStreamPlayer.new()
-		p.stream = _load_stream("res://assets/audio/music_%s.wav" % s)
+		p.stream = _load_stream("res://assets/audio/music_%s" % s)
 		p.bus = "Master"
 		p.volume_db = -80.0
 		add_child(p)
@@ -57,15 +57,22 @@ func _ready() -> void:
 	set_act("Intro", true)
 
 
-func _load_stream(path: String) -> AudioStream:
-	if _cache.has(path):
-		return _cache[path]
+## Music ships as Vorbis (small enough for a phone to stream), one-shots stay as
+## WAV (instant decode, which matters for a sound that has to land on a beat).
+## Either extension is accepted so a local build with raw WAV stems still runs.
+func _load_stream(base: String) -> AudioStream:
+	if _cache.has(base):
+		return _cache[base]
 	var st: AudioStream = null
-	if ResourceLoader.exists(path):
-		st = load(path)
+	for ext in [".ogg", ".wav"]:
+		var path: String = base + str(ext)
+		if ResourceLoader.exists(path):
+			st = load(path)
+			if st != null:
+				break
 	if st == null:
-		push_warning("AudioDirector: missing %s" % path)
-	_cache[path] = st
+		push_warning("AudioDirector: missing %s(.ogg|.wav)" % base)
+	_cache[base] = st
 	return st
 
 
@@ -133,7 +140,7 @@ func _apply(s: String) -> void:
 ## GDD 16 / 17: one-shot world sound. `pitch_jitter` keeps repeated dashes and
 ## footfalls from turning into a machine gun.
 func play(name: String, volume: float = 1.0, pitch: float = 1.0, pitch_jitter: float = 0.0) -> void:
-	var stream := _load_stream("res://assets/audio/%s.wav" % name)
+	var stream := _load_stream("res://assets/audio/%s" % name)
 	if stream == null:
 		return
 	var p := _sfx[_sfx_next]
@@ -143,3 +150,4 @@ func play(name: String, volume: float = 1.0, pitch: float = 1.0, pitch_jitter: f
 	var g := volume * GameSettings.sfx_volume
 	p.volume_db = -80.0 if g <= 0.001 else linear_to_db(g)
 	p.play()
+
