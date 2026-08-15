@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1786802397|2975269';
+const CACHE_VERSION = '1786804151|2941990';
 /** @type {string} */
 const CACHE_PREFIX = 'MineBeat Rush-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
