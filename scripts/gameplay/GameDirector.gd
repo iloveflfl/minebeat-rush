@@ -56,10 +56,11 @@ func _apply_quality_tier() -> void:
 	vp.msaa_3d = Quality.msaa()
 	vp.scaling_3d_scale = Quality.render_scale()
 	# Screen-space AA does not exist on the Compatibility renderer the web build
-	# uses - asking for it there only logs a warning.
-	var want_fxaa := not Quality.is_mobile() and not Quality.is_compatibility()
-	vp.screen_space_aa = (Viewport.SCREEN_SPACE_AA_FXAA if want_fxaa
-			else Viewport.SCREEN_SPACE_AA_DISABLED)
+	# uses, and the setter warns there even when the value being set is
+	# "disabled" - so on that renderer the property is left alone entirely.
+	if not Quality.is_compatibility():
+		vp.screen_space_aa = (Viewport.SCREEN_SPACE_AA_DISABLED if Quality.is_mobile()
+				else Viewport.SCREEN_SPACE_AA_FXAA)
 	print("MineBeat Rush - quality tier: %s" % Quality.describe())
 
 
