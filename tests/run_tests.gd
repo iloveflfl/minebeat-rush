@@ -15,6 +15,9 @@ func _init() -> void:
 	_test_five_wide_pattern()
 	_test_two_mine_pattern()
 	_test_ambiguous_is_rejected()
+	_test_pattern_authoring()
+	_test_destroyed_clues()
+	_test_two_band_boards()
 	_test_movement_rules()
 	_test_obstacle_routing()
 	_test_tempo_map()
@@ -55,10 +58,23 @@ func _sector(width: int, length: int, mine_cols: Array) -> MineGrid:
 
 
 func _clue_row(g: MineGrid) -> Array:
+	return _clue_row_of(g, g.length - 2)
+
+
+func _clue_row_of(g: MineGrid, row: int) -> Array:
 	var out := []
 	for c in g.width:
-		out.append(g.number_at(Vector2i(c, g.length - 2)))
+		out.append(g.number_at(Vector2i(c, row)))
 	return out
+
+
+## Build a grid straight from an authored ASCII board, exactly the way
+## Stage1Data does, so the tests exercise the real authoring path.
+func _pattern(rows: Array) -> MineGrid:
+	var s := SectorData.new()
+	s.id = "test"
+	s.pattern = PackedStringArray(rows)
+	return s.build_grid()
 
 
 func _test_number_rule() -> void:
@@ -113,14 +129,67 @@ func _test_ambiguous_is_rejected() -> void:
 	ok(res.ambiguous.size() > 0, "cells are reported ambiguous")
 	ok(g.validate(Vector2i(2, 0), 12).size() > 0, "validate() refuses the board")
 
-	# A covered slab no clue touches can never be deduced.
-	var g2 := MineGrid.new(3, 5)
-	g2.set_state(Vector2i(1, 4), MineGrid.Cell.COVERED)
-	g2.set_mine(Vector2i(1, 4), true)
-	g2.set_state(Vector2i(1, 3), MineGrid.Cell.OBSTACLE)
-	g2.set_state(Vector2i(0, 3), MineGrid.Cell.OBSTACLE)
-	g2.set_state(Vector2i(2, 3), MineGrid.Cell.OBSTACLE)
-	ok(g2.validate(Vector2i(1, 0), 12).size() > 0, "buried clues are refused")
+	# An escape no clue touches can never be deduced.
+	var g2 := _pattern(["#*#", "###", "...", "..."])
+	ok(g2.validate(Vector2i(1, 0), 12).size() > 0, "an escape with no live clue is refused")
+
+
+func _test_destroyed_clues() -> void:
+	print("\n[destroyed clues]  GDD 19 \"부분 단서 파손\"")
+	# A column has crushed the middle clue. The clues that survive still force
+	# the answer, so the board is legal.
+	var ok_board := _pattern(["??*??", "..#..", ".....", "....."])
+	eq(ok_board.validate(Vector2i(2, 0), 12).size(), 0,
+		"a crushed clue is legal when the survivors still force the escape")
+	ok(ok_board.solve().solution_count == 1, "and the board still has exactly one solution")
+
+	# Crush the wrong clue on a 3-wide board and it collapses into a coin flip.
+	var bad := _pattern(["*??", "..#", "..."])
+	ok(bad.validate(Vector2i(1, 0), 12).size() > 0,
+		"crushing a load-bearing clue is refused as a guess")
+
+
+func _test_two_band_boards() -> void:
+	print("\n[two covered bands]  GDD 18 - depth comes from combining clues")
+	var one := _pattern(["??*??", ".....", "....."])
+	eq(one.deduction_depth(), 1, "one band: a single clue row hands it to you")
+
+	# The near band has to be proved empty from the lower clue row before the
+	# upper clue row means anything.
+	var two := _pattern(["??*??", ".....", "?????", ".....", "....."])
+	eq(two.validate(Vector2i(2, 0), 12).size(), 0, "two-band board validates")
+	eq(two.deduction_depth(), 2, "two bands: two levels of inference")
+
+	# Charges cluster, so clue numbers finally leave the 0/1 range.
+	var pair := _pattern(["?**??", ".....", "....."])
+	eq(_clue_row_of(pair, 1), [1, 2, 2, 1, 0], "two adjacent charges read 1 2 2 1 0")
+	eq(pair.validate(Vector2i(2, 0), 12).size(), 0, "twin-charge board validates")
+
+	var bank := _pattern(["?***?", ".....", "....."])
+	eq(_clue_row_of(bank, 1), [1, 2, 3, 2, 1], "three adjacent charges read 1 2 3 2 1")
+	eq(bank.validate(Vector2i(2, 0), 12).size(), 0, "charge-bank board validates")
+
+
+func _test_pattern_authoring() -> void:
+	print("\n[ASCII board authoring]  GDD 25.1 / 27")
+	# pattern[0] is the FAR row, so the array reads the way the screen looks.
+	var g := _pattern(["*#?", ".~.", "...", "..."])
+	eq(g.width, 3, "width comes from the row strings")
+	eq(g.length, 4, "length comes from the row count")
+	eq(g.state_at(Vector2i(0, 3)), MineGrid.Cell.COVERED, "'*' is a covered slab")
+	ok(g.is_mine(Vector2i(0, 3)), "'*' hides a charge, on the far row")
+	eq(g.state_at(Vector2i(1, 3)), MineGrid.Cell.OBSTACLE, "'#' is not walkable")
+	eq(g.state_at(Vector2i(2, 3)), MineGrid.Cell.COVERED, "'?' is a covered slab")
+	eq(g.state_at(Vector2i(1, 2)), MineGrid.Cell.REVEALED, "'~' is a walkable sand slab")
+
+	var holes := _pattern(["?*?", "._.", "..."])
+	eq(holes.state_at(Vector2i(1, 1)), MineGrid.Cell.HOLE, "'_' is a hole")
+	ok(not holes.is_walkable(Vector2i(1, 1)), "and it is not walkable")
+
+	var s := SectorData.new()
+	s.pattern = PackedStringArray(["??*", "..", "..."])
+	s.build_grid()
+	ok(s.structural_errors().size() > 0, "a ragged board is refused")
 
 
 func _test_movement_rules() -> void:
@@ -164,8 +233,8 @@ func _test_tempo_map() -> void:
 	ok(absf(tm.beat_at_time(2.0) - 4.0) < 1e-9, "inverse holds inside the first segment")
 
 	var real := TempoMap.from_json_file("res://assets/data/stage1_tempo.json")
-	eq(real.bpm_at_beat(0.0), 92.0, "stage 1 opens at 92 bpm")
-	eq(real.bpm_at_beat(300.0), 122.0, "stage 1 finishes at 122 bpm")
+	eq(real.bpm_at_beat(0.0), 112.0, "stage 1 opens at 112 bpm")
+	eq(real.bpm_at_beat(380.0), 152.0, "stage 1 finishes at 152 bpm")
 
 
 func _test_launch_curve() -> void:
@@ -214,7 +283,35 @@ func _test_stage_chain() -> void:
 	for e in st.errors:
 		printerr("      ! " + e)
 	eq(st.errors.size(), 0, "every authored sector validates")
-	eq(st.sectors.size(), 34, "34 sectors authored")
+	eq(st.sectors.size(), 44, "44 sectors authored")
+
+	# GDD 18: the ramp has to actually be there, and it has to be a ramp in how
+	# many clues you combine - not in what a number means.
+	var deep := 0
+	var big_clue := 0
+	var past_learn := 0
+	var past_learn_rich := 0
+	for i in st.sectors.size():
+		var g: MineGrid = st.grids[i]
+		if g.deduction_depth() != 1:
+			deep += 1
+		var top := 0
+		for r in g.length:
+			for c in g.width:
+				if g.state_at(Vector2i(c, r)) == MineGrid.Cell.REVEALED:
+					top = maxi(top, g.number_at(Vector2i(c, r)))
+		big_clue = maxi(big_clue, top)
+		if st.sectors[i].act != "Learn":
+			past_learn += 1
+			if top >= 2:
+				past_learn_rich += 1
+	ok(deep >= 20, "%d sectors need more than one level of inference" % deep)
+	eq(big_clue, 3, "clue numbers reach 3, so 0/1 pattern matching is not enough")
+	ok(past_learn_rich * 2 >= past_learn,
+		"%d of %d post-tutorial sectors carry a clue of 2 or more" % [past_learn_rich, past_learn])
+	for i in 3:
+		ok((st.grids[i] as MineGrid).deduction_depth() <= 2,
+			"the first sectors stay shallow (GDD 12.4)")
 
 	var last_beat := Tuning.sector_ground_beat(st.sectors.size() - 1) + Tuning.CYCLE_BEATS
 	var total := tm.time_at_beat(last_beat)

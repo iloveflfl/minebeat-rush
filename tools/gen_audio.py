@@ -216,6 +216,7 @@ drums = np.zeros(N)
 bass = np.zeros(N)
 lead = np.zeros(N)
 atmos = np.zeros(N)
+drive = np.zeros(N)
 
 bars = TOTAL_BEATS // 4
 
@@ -251,6 +252,22 @@ for bar in range(bars):
         f = D4 * (2.0 ** ((chord + SCALE[deg % len(SCALE)] + 12 * (deg // len(SCALE))) / 12.0))
         place(lead, t_at(b0 + off), pluck(f, beat_len * 0.9, rng=rng), 0.5)
 
+    # --- drive: the "stop dragging" stem. 16ths, claps and a fill every 4th
+    #     bar. Faded in from Act 2 onward so the stage physically speeds up
+    #     without the tempo having to do all the work. -------------------------
+    for k in range(16):
+        bb = b0 + k * 0.25
+        g = 0.26 if k % 4 == 0 else (0.15 if k % 2 == 0 else 0.09)
+        place(drive, t_at(bb), hat(dur=0.05, bright=9000.0, rng=rng), g)
+    for cb in (1.0, 3.0):
+        place(drive, t_at(b0 + cb), snare(dur=0.22, rng=rng), 0.42)
+    if bar % 4 == 3:
+        for k in range(6):
+            place(drive, t_at(b0 + 2.5 + k * 0.25),
+                  frame_drum(dur=0.30, f=150.0 - k * 14.0, rng=rng), 0.42)
+    if bar % 8 == 0:
+        place(drive, tb, kick(dur=0.5, f0=220.0, rng=rng), 0.7)
+
     # --- atmos: drone + a riser into every GO --------------------------------
     dn = int(beat_len * 4 * SR)
     dt = np.arange(dn) / SR
@@ -267,6 +284,7 @@ save("music_drums.wav", drums)
 save("music_bass.wav", bass)
 save("music_lead.wav", lead)
 save("music_atmos.wav", atmos)
+save("music_drive.wav", drive)
 
 
 # ----------------------------------------------------------------------------
@@ -376,6 +394,44 @@ def sfx_gate():
     return ch * 0.4 + shim
 
 
+def sfx_pop():
+    """Cartoon 'POP' - the comedy layer on top of the real explosion."""
+    n = int(0.6 * SR)
+    t = np.arange(n) / SR
+    f = 900.0 * np.exp(-t / 0.04) + 120.0
+    body = np.sin(2 * np.pi * np.cumsum(f) / SR) * env_ad(n, 0.0008, 0.07, 1.0)
+    smack = highpass(noise(n, rng), 2000.0) * env_ad(n, 0.0005, 0.02, 1.0)
+    boing = osc(320.0, n, "tri") * env_ad(n, 0.002, 0.13, 1.0) * 0.5
+    return body * 1.0 + smack * 0.6 + boing
+
+
+def sfx_boing():
+    """Springy anticipation - the crouch before a launch."""
+    n = int(0.35 * SR)
+    t = np.arange(n) / SR
+    f = 180.0 + 420.0 * (t / 0.35)
+    s = np.sin(2 * np.pi * np.cumsum(f) / SR) * env_ad(n, 0.003, 0.09, 1.0)
+    return s + osc(90.0, n, "tri") * env_ad(n, 0.002, 0.05, 1.0) * 0.4
+
+
+def sfx_whoosh():
+    n = int(0.5 * SR)
+    u = np.arange(n) / n
+    nz = noise(n, rng)
+    sig = lowpass(nz, 900.0) * (1 - u) + highpass(nz, 2200.0) * u
+    return sig * (np.sin(np.pi * u) ** 0.8)
+
+
+def sfx_sparkle():
+    n = int(0.7 * SR)
+    out = np.zeros(n)
+    for k, f in enumerate([1760.0, 2637.0, 3520.0, 4186.0]):
+        seg = osc(f, n, "sine") * env_ad(n, 0.002, 0.10 - k * 0.015, 1.0)
+        off = int(k * 0.045 * SR)
+        out[off:] += seg[: n - off] * (0.55 - k * 0.08)
+    return out
+
+
 def sfx_reveal():
     n = int(0.35 * SR)
     s = osc(880.0, n, "tri") * env_ad(n, 0.002, 0.06, 1.0) * 0.5
@@ -400,6 +456,10 @@ for nm, sig in [
     ("sfx_scarf.wav", sfx_scarf()),
     ("sfx_reject.wav", sfx_reject()),
     ("sfx_reveal.wav", sfx_reveal()),
+    ("sfx_pop.wav", sfx_pop()),
+    ("sfx_boing.wav", sfx_boing()),
+    ("sfx_whoosh.wav", sfx_whoosh()),
+    ("sfx_sparkle.wav", sfx_sparkle()),
     ("sfx_gate.wav", sfx_gate()),
 ]:
     save(nm, sig, peak=0.9)

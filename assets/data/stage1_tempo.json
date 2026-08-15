@@ -1,15 +1,15 @@
 {
   "stage": "desert_bridge",
-  "comment": "GDD 28/33 [TUNE] BPM curve ~92 -> ~122. Beats are absolute song beats.",
+  "comment": "Playtest pass 2: the stage read as sluggish at 92-122. Pushed to 112-152 and the sector count to 44, so the same 3 minutes now holds 44 decisions instead of 34. GDD 28 marks BPM as [TUNE].",
   "segments": [
-    { "beat": 0,   "bpm": 92 },
-    { "beat": 84,  "bpm": 98 },
-    { "beat": 132, "bpm": 104 },
-    { "beat": 180, "bpm": 110 },
-    { "beat": 228, "bpm": 116 },
-    { "beat": 276, "bpm": 122 }
+    { "beat": 0,   "bpm": 112 },
+    { "beat": 92,  "bpm": 120 },
+    { "beat": 148, "bpm": 128 },
+    { "beat": 204, "bpm": 136 },
+    { "beat": 260, "bpm": 144 },
+    { "beat": 316, "bpm": 152 }
   ],
-  "total_beats": 330,
+  "total_beats": 400,
   "accident_go_beat": 32,
   "first_ground_beat": 36,
   "ground_beats": 4,

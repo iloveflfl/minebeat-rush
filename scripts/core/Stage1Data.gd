@@ -4,44 +4,53 @@ extends RefCounted
 ## Stage 1 - Desert Bridge. GDD 20 / 21: an authored stage with a start, a rise,
 ## a finale and an arrival. Not endless.
 ##
-## Sectors are authored as "how far forward, how far sideways, what is in the
-## way" - the actual clue numbers are always derived by MineGrid, never typed
-## in by hand, so a clue can never disagree with the board.
+## 44 sectors. Boards are drawn as ASCII (see SectorData for the legend) with
+## the far row first, so the table below reads the way the stage looks.
+##
+## GDD 18 [LOCK] governs the difficulty curve: the meaning of a number never
+## changes, so the ramp comes from combining more clues, longer routes, wider
+## decks and less time - never from new arithmetic.
+##
+##   Learn      one covered band, one clue row.  Deduction depth 1.
+##   Master     a second covered band appears; its emptiness has to be proved
+##              from a different clue row before the far band can be read.
+##              Depth 2.
+##   Escalate   five wide, charges cluster so clue numbers reach 2 and 3,
+##              fallen columns destroy individual clues (GDD 19 "부분 단서 파손").
+##   Remix      all of it, alternating widths, at 144-152 BPM.
+##   Finale     the longest routes and the biggest spans.
 
 const INTRO_WIDTH := 5
-const INTRO_LENGTH := 16
-const INTRO_MINE := Vector2i(2, 13)
+const INTRO_LENGTH := 13
+const INTRO_MINE := Vector2i(2, 10)
 
 
 ## Act 0 free-roam deck (GDD 12.1). Not a puzzle: it is a place to learn the
-## controls and to meet the first mine. Built directly, not validated as a
-## sector, because there is nothing to deduce yet.
+## controls and to meet the first charge.
 static func build_intro_grid() -> MineGrid:
 	var g := MineGrid.new(INTRO_WIDTH, INTRO_LENGTH)
 
 	# Scattered unopened slabs, so the player learns that stepping on a covered
 	# slab is normal and safe long before one of them turns out not to be.
 	for cell in [
-		Vector2i(0, 3), Vector2i(1, 3), Vector2i(4, 4), Vector2i(3, 6),
-		Vector2i(0, 7), Vector2i(1, 7), Vector2i(2, 7),
-		Vector2i(4, 8), Vector2i(3, 9), Vector2i(0, 10),
+		Vector2i(0, 2), Vector2i(1, 2), Vector2i(4, 3), Vector2i(3, 5),
+		Vector2i(0, 6), Vector2i(1, 6), Vector2i(2, 6), Vector2i(4, 7),
 	]:
 		g.set_state(cell, MineGrid.Cell.COVERED)
 
-	# Ruined railings and a fallen statue give the deck a shape to walk around.
-	for cell in [Vector2i(0, 5), Vector2i(4, 6), Vector2i(1, 9)]:
+	for cell in [Vector2i(0, 4), Vector2i(4, 5), Vector2i(1, 8)]:
 		g.set_state(cell, MineGrid.Cell.OBSTACLE)
 
-	# The far end of the approach has collapsed down to a single passable lane,
-	# and the last slab of that lane is the charge. Walking forward is enough.
-	for r in range(12, INTRO_LENGTH):
+	# The far end of the approach has collapsed to a single passable lane and
+	# the last slab of that lane is the charge. Walking forward is enough.
+	for r in range(9, INTRO_LENGTH):
 		for c in INTRO_WIDTH:
 			if c != 2:
 				g.set_state(Vector2i(c, r), MineGrid.Cell.HOLE)
-	g.set_state(Vector2i(2, 12), MineGrid.Cell.COVERED)
+	g.set_state(Vector2i(2, 9), MineGrid.Cell.COVERED)
 	g.set_state(INTRO_MINE, MineGrid.Cell.COVERED)
 	g.set_mine(INTRO_MINE, true)
-	for r in range(14, INTRO_LENGTH):
+	for r in range(11, INTRO_LENGTH):
 		g.set_state(Vector2i(2, r), MineGrid.Cell.HOLE)
 
 	return g
@@ -55,104 +64,97 @@ static func intro_start_cell() -> Vector2i:
 # authored sector table
 # ---------------------------------------------------------------------------
 
-static func _s(p: Dictionary) -> SectorData:
+static func _s(id: String, act: String, rows: Array, gap: float,
+		opts: Dictionary = {}) -> SectorData:
 	var s := SectorData.new()
-	s.id = p.get("id", "?")
-	s.act = p.get("act", "")
-	s.width = p.get("w", 3)
-	s.length = p.get("l", 3)
-	s.mine_lat = p.get("lat", 0)
-	s.mine_lat_2 = p.get("lat2", 9999)
-	s.gap_after = p.get("gap", 22.0)
-	s.timing_exempt = p.get("exempt", false)
-	s.spectacle = p.get("show", "")
-	var obs: Array[Vector2i] = []
-	for v in p.get("obs", []):
-		obs.append(v)
-	s.obstacles = obs
-	var hol: Array[Vector2i] = []
-	for v in p.get("holes", []):
-		hol.append(v)
-	s.holes = hol
-	var snd: Array[Vector2i] = []
-	for v in p.get("sand", []):
-		snd.append(v)
-	s.sand = snd
-	s.set_meta("mine_abs", p.get("abs", []))
+	s.id = id
+	s.act = act
+	s.pattern = PackedStringArray(rows)
+	s.gap_after = gap
+	s.timing_exempt = opts.get("exempt", false)
+	s.spectacle = opts.get("show", "")
 	return s
 
 
-## GDD 21 beat sheet, expressed as sectors. 34 sectors * 8 beats = 272 beats of
-## play after the accident, which lands the Sun Gate at roughly 3:05.
 static func sector_table() -> Array[SectorData]:
 	var t: Array[SectorData] = []
 
-	# --- Act 1 "Learn" : 3 wide, nothing in the way, generous time ----------
-	# GDD 12.4: first a 0 clue, then 0+1 narrowing to one candidate, then two
-	# 1s that only overlap on one cell.
-	t.append(_s({"id": "L1", "act": "Learn", "w": 3, "l": 3, "lat": 1, "gap": 20.0, "exempt": true}))
-	t.append(_s({"id": "L2", "act": "Learn", "w": 3, "l": 3, "lat": -2, "gap": 20.0, "exempt": true}))
-	t.append(_s({"id": "L3", "act": "Learn", "w": 3, "l": 3, "lat": 1, "gap": 20.0, "exempt": true}))
-	t.append(_s({"id": "L4", "act": "Learn", "w": 3, "l": 4, "lat": -1, "gap": 21.0}))
-	t.append(_s({"id": "L5", "act": "Learn", "w": 3, "l": 4, "lat": 2, "gap": 21.0}))
-	t.append(_s({"id": "L6", "act": "Learn", "w": 3, "l": 4, "lat": -1, "gap": 22.0}))
+	# --- Act 1 "Learn" -------------------------------------------------------
+	# GDD 12.4: a 0 clue first, then 0 and 1 narrowing to one candidate, then
+	# two 1s that only overlap on one cell.
+	t.append(_s("L1", "Learn", ["??*", "...", "..."], 20.0, {"exempt": true}))
+	t.append(_s("L2", "Learn", ["*??", "...", "..."], 20.0, {"exempt": true}))
+	t.append(_s("L3", "Learn", ["?*?", "...", "..."], 21.0, {"exempt": true}))
+	t.append(_s("L4", "Learn", ["*??", "...", "...", "..."], 21.0))
+	t.append(_s("L5", "Learn", ["??*", "...", "...", "..."], 22.0))
+	t.append(_s("L6", "Learn", ["?*?", "...", "...", "..."], 22.0))
+	t.append(_s("L7", "Learn", ["*??", "...", "...", "...", "..."], 23.0))
 
-	# --- Act 2 "Master" : same rules, further to run ------------------------
-	t.append(_s({"id": "M1", "act": "Master", "w": 3, "l": 5, "lat": 1, "gap": 23.0}))
-	t.append(_s({"id": "M2", "act": "Master", "w": 3, "l": 5, "lat": -2, "gap": 23.0}))
-	t.append(_s({"id": "M3", "act": "Master", "w": 3, "l": 5, "lat": 1, "gap": 24.0}))
-	t.append(_s({"id": "M4", "act": "Master", "w": 3, "l": 6, "lat": 1, "gap": 24.0}))
-	t.append(_s({"id": "M5", "act": "Master", "w": 3, "l": 6, "lat": -2, "gap": 25.0}))
-	t.append(_s({"id": "M6", "act": "Master", "w": 3, "l": 6, "lat": 2, "gap": 25.0}))
-	# GDD 21, 1:20-1:45 "First Obstacle": a fallen column across the direct line.
-	t.append(_s({"id": "M7", "act": "Master", "w": 3, "l": 6, "lat": -2, "gap": 26.0,
-			"obs": [Vector2i(1, 2), Vector2i(1, 3)], "show": "fallen_column"}))
-	t.append(_s({"id": "M8", "act": "Master", "w": 3, "l": 6, "lat": 2, "gap": 26.0,
-			"obs": [Vector2i(1, 3)], "holes": [Vector2i(0, 2)]}))
+	# --- Act 2 "Master" : a second charged band, so clues stop being 0/1 -----
+	t.append(_s("M1", "Master", ["??*", "...", "...", "...", "..."], 23.0))
+	t.append(_s("M2", "Master", ["?*?", "...", "...", "...", "..."], 24.0))
+	# The second band arrives empty first, so the player learns to walk across
+	# covered slabs they have proved safe rather than ones they hope are safe.
+	t.append(_s("M3", "Master", ["?*?", "...", "???", "...", "..."], 24.0,
+			{"show": "second_band"}))
+	t.append(_s("M4", "Master", ["*??", "...", "???", "...", "..."], 25.0))
+	# ...and then it is charged too. Two charges stacked in the same column make
+	# the upper clue row read 2 2 2 - the first number that is not 0 or 1.
+	t.append(_s("M5", "Master", ["?*?", "...", "?*?", "...", "..."], 25.0,
+			{"show": "stacked_charge"}))
+	t.append(_s("M6", "Master", ["??*", "...", "??*", "...", "..."], 26.0))
+	# GDD 21, "First Obstacle": a fallen column across the direct line.
+	t.append(_s("M7", "Master", ["??*", "...", "???", ".#.", "...", "..."], 26.0,
+			{"show": "fallen_column"}))
+	t.append(_s("M8", "Master", ["*??", "...", "*??", "...", "..#", "..."], 27.0))
+	t.append(_s("M9", "Master", ["?*?", "...", "???", "...", ".#.", "..."], 27.0))
+	t.append(_s("M10", "Master", ["*??", "...", "?*?", "...", "..#", "..."], 28.0))
 
-	# --- Act 3 "Escalate" : 5 wide, obstacles, big structural collapse ------
-	t.append(_s({"id": "E1", "act": "Escalate", "w": 3, "l": 6, "lat": -2, "gap": 27.0,
-			"obs": [Vector2i(1, 1), Vector2i(2, 3)]}))
-	t.append(_s({"id": "E2", "act": "Escalate", "w": 3, "l": 6, "lat": -1, "gap": 28.0,
-			"obs": [Vector2i(0, 2), Vector2i(2, 3)]}))
-	# GDD 21, 1:45-2:10 "Five Wide": the deck widens, the maths does not change.
-	t.append(_s({"id": "E3", "act": "Escalate", "w": 5, "l": 5, "lat": 2, "gap": 28.0,
-			"show": "widen"}))
-	t.append(_s({"id": "E4", "act": "Escalate", "w": 5, "l": 5, "lat": -3, "gap": 29.0}))
-	t.append(_s({"id": "E5", "act": "Escalate", "w": 5, "l": 6, "lat": 3, "gap": 29.0}))
-	t.append(_s({"id": "E6", "act": "Escalate", "w": 5, "l": 6, "lat": -3, "gap": 30.0}))
-	t.append(_s({"id": "E7", "act": "Escalate", "w": 5, "l": 6, "lat": 3, "gap": 30.0,
-			"obs": [Vector2i(2, 2), Vector2i(2, 3)]}))
-	t.append(_s({"id": "E8", "act": "Escalate", "w": 5, "l": 6, "lat": -3, "gap": 31.0,
-			"obs": [Vector2i(1, 2), Vector2i(3, 3)], "sand": [Vector2i(2, 1)]}))
-	t.append(_s({"id": "E9", "act": "Escalate", "w": 5, "l": 6, "lat": 3, "gap": 31.0,
-			"obs": [Vector2i(2, 2), Vector2i(3, 3)]}))
-	t.append(_s({"id": "E10", "act": "Escalate", "w": 5, "l": 6, "lat": -3, "gap": 32.0,
-			"obs": [Vector2i(1, 2), Vector2i(1, 3), Vector2i(3, 3)]}))
-	# GDD 19 [TEST] "지뢰 2개": two legal escapes, one near and one far.
-	# Columns are pinned so the clue row reads 1 1 0 1 1, which forces both.
-	t.append(_s({"id": "E11", "act": "Escalate", "w": 5, "l": 6, "gap": 33.0,
-			"abs": [0, 4], "show": "collapse_showpiece"}))
-	t.append(_s({"id": "E12", "act": "Escalate", "w": 5, "l": 6, "lat": 3, "gap": 34.0,
-			"obs": [Vector2i(2, 1), Vector2i(2, 2), Vector2i(2, 3)], "show": "pier_fall"}))
+	# --- Act 3 "Escalate" : five wide, clustered charges, destroyed clues ----
+	# GDD 21, "Five Wide": the deck widens, the maths does not change.
+	t.append(_s("E1", "Escalate", ["??*??", ".....", "....."], 28.0, {"show": "widen"}))
+	t.append(_s("E2", "Escalate", ["????*", ".....", ".....", "....."], 29.0))
+	# Two charges side by side: a clue reads 2.
+	t.append(_s("E3", "Escalate", ["?**??", ".....", ".....", "....."], 29.0,
+			{"show": "twin_charge"}))
+	t.append(_s("E4", "Escalate", ["*?*??", ".....", ".....", "....."], 30.0))
+	t.append(_s("E5", "Escalate", ["??*??", ".....", "??*??", ".....", "....."], 30.0))
+	# GDD 19 "부분 단서 파손": a column has crushed one clue. The clues that
+	# survive still force the answer - the solver proves it, every build.
+	t.append(_s("E6", "Escalate", ["??*??", "..#..", ".....", "....."], 31.0,
+			{"show": "broken_clue"}))
+	t.append(_s("E7", "Escalate", ["?*???", ".....", "???*?", ".....", "....."], 31.0))
+	t.append(_s("E8", "Escalate", ["*???*", ".....", ".....", "....."], 32.0))
+	t.append(_s("E9", "Escalate", ["?*???", ".....", "?*???", "..#..", "....."], 32.0))
+	# Three in a row: a clue reads 3.
+	t.append(_s("E10", "Escalate", ["?***?", ".....", ".....", "....."], 33.0,
+			{"show": "charge_bank"}))
+	t.append(_s("E11", "Escalate", ["?*???", "#....", "?????", ".....", "....."], 33.0))
+	t.append(_s("E12", "Escalate", ["???*?", ".....", "??*??", "..#..", "....."], 34.0))
+	t.append(_s("E13", "Escalate", ["??*?*", ".....", "?????", ".....", "....."], 34.0))
+	t.append(_s("E14", "Escalate", ["*????", ".....", "??*??", ".#...", "....."], 35.0))
+	t.append(_s("E15", "Escalate", ["??***", ".....", "..#..", "....."], 35.0,
+			{"show": "collapse_showpiece"}))
 
-	# --- Act 4 "Remix" : everything already learned, fast ------------------
-	t.append(_s({"id": "R1", "act": "Remix", "w": 3, "l": 5, "lat": 2, "gap": 34.0}))
-	t.append(_s({"id": "R2", "act": "Remix", "w": 5, "l": 5, "lat": -3, "gap": 35.0}))
-	t.append(_s({"id": "R3", "act": "Remix", "w": 3, "l": 5, "lat": 2, "gap": 35.0,
-			"obs": [Vector2i(1, 2)]}))
-	t.append(_s({"id": "R4", "act": "Remix", "w": 5, "l": 6, "lat": 3, "gap": 36.0,
-			"obs": [Vector2i(2, 2)]}))
-	t.append(_s({"id": "R5", "act": "Remix", "w": 3, "l": 6, "lat": -2, "gap": 36.0,
-			"obs": [Vector2i(1, 1), Vector2i(1, 3)]}))
-	t.append(_s({"id": "R6", "act": "Remix", "w": 5, "l": 6, "lat": 4, "gap": 38.0,
-			"obs": [Vector2i(2, 3)]}))
+	# --- Act 4 "Remix" : everything already learned, at 144 BPM -------------
+	t.append(_s("R1", "Remix", ["?*?", "...", "?*?", "...", "..."], 36.0))
+	t.append(_s("R2", "Remix", ["???*?", ".....", "?*???", ".....", "....."], 36.0))
+	t.append(_s("R3", "Remix", ["??*", "...", "???", ".#.", "...", "..."], 37.0))
+	t.append(_s("R4", "Remix", ["*???*", "...#.", ".....", "....."], 37.0))
+	t.append(_s("R5", "Remix", ["???**", ".....", ".....", "....."], 38.0))
+	t.append(_s("R6", "Remix", ["*??", "...", "*??", "...", "..#", "..."], 38.0))
+	t.append(_s("R7", "Remix", ["??*??", ".....", "??*??", "..#..", "....."], 39.0))
+	t.append(_s("R8", "Remix", ["?*???", ".....", "???*?", "~~~..", "....."], 39.0,
+			{"show": "sandfall"}))
+	t.append(_s("R9", "Remix", ["?**??", ".....", "?????", ".....", "....."], 40.0))
 
-	# --- Finale (GDD 21, 2:55-3:20) ----------------------------------------
-	t.append(_s({"id": "F1", "act": "Finale", "w": 5, "l": 6, "lat": -4, "gap": 46.0,
-			"show": "bridge_twist"}))
-	t.append(_s({"id": "F2", "act": "Finale", "w": 5, "l": 5, "gap": 64.0,
-			"abs": [2], "show": "final_gap"}))
+	# --- Finale (GDD 21, 2:55-3:20) -----------------------------------------
+	t.append(_s("F1", "Finale", ["???*?", ".....", "?*???", "..#..", "....."], 46.0,
+			{"show": "bridge_twist"}))
+	t.append(_s("F2", "Finale", ["?***?", ".....", "?????", ".....", "....."], 52.0,
+			{"show": "charge_bank"}))
+	t.append(_s("F3", "Finale", ["??*??", ".....", ".....", ".....", "....."], 70.0,
+			{"show": "final_gap"}))
 
 	return t
 
@@ -170,42 +172,22 @@ class BuiltStage extends RefCounted:
 	var gate_z: float = 0.0
 
 
-## Lay the whole bridge out, resolve every mine column, and prove every sector.
 static func build(tempo: TempoMap) -> BuiltStage:
 	var out := BuiltStage.new()
 	out.sectors = sector_table()
 
-	# The intro deck runs from z=0 backwards; sector 0 starts past its end.
 	var intro_end_z := -float(INTRO_LENGTH - 1) * Tuning.TILE
 	out.intro_z = 0.0
 	var z := intro_end_z - 26.0
 
-	# Nominal landing column, carried across the gap with no air steering.
-	# The intro charge sits in the middle lane, so sector 0 starts centred.
-	var carry_x := SectorData.col_to_x(INTRO_MINE.x, INTRO_WIDTH)
-
 	for i in out.sectors.size():
 		var s: SectorData = out.sectors[i]
-		s.world_z = z
-		s.start_col = SectorData.x_to_col(carry_x, s.width)
-
-		var abs_cols: Array = s.get_meta("mine_abs", [])
-		if abs_cols.is_empty():
-			s.mine_cols = s.resolve_mine_cols(s.start_col)
-		else:
-			var mc: Array[int] = []
-			for c in abs_cols:
-				mc.append(clampi(int(c), 0, s.width - 1))
-			s.mine_cols = mc
-
 		var grid: MineGrid = s.build_grid()
+		s.world_z = z
 		out.grids.append(grid)
-
-		carry_x = SectorData.col_to_x(s.mine_cols[0], s.width)
 		z -= float(s.length - 1) * Tuning.TILE + s.gap_after
 
 	out.gate_z = z
-
 	_validate(out, tempo)
 	return out
 
@@ -221,13 +203,8 @@ static func _validate(st: BuiltStage, tempo: TempoMap) -> void:
 		var ground_seconds := tempo.time_at_beat(gb + Tuning.GROUND_BEATS) - tempo.time_at_beat(gb)
 		var budget := Tuning.ground_dash_budget(ground_seconds)
 
-		# Uniqueness, clue honesty and obstacle sanity, from the nominal start.
-		for e in grid.validate(Vector2i(s.start_col, 0), budget):
-			st.errors.append("%s: %s" % [s.id, e])
-
-		# GDD 10.2: a scarf glide drops the player into the next sector on
-		# whatever column they happened to be standing on, and a two-mine sector
-		# can end on either column. So every column has to be a legal landing.
+		# GDD 10.2: a scarf glide drops the player onto whatever column they
+		# happened to be standing on, so *every* column has to be a legal start.
 		var worst := -1
 		var worst_col := -1
 		for c in s.width:
@@ -235,10 +212,9 @@ static func _validate(st: BuiltStage, tempo: TempoMap) -> void:
 			if not grid.is_walkable(start):
 				st.errors.append("%s: landing column %d is not walkable" % [s.id, c])
 				continue
+			for e in grid.validate(start, budget):
+				st.errors.append("%s (from col %d): %s" % [s.id, c, e])
 			var d := grid.min_dashes_to_mine(start)
-			if d < 0:
-				st.errors.append("%s: no mine reachable from landing column %d" % [s.id, c])
-				continue
 			if d > worst:
 				worst = d
 				worst_col = c
@@ -246,6 +222,15 @@ static func _validate(st: BuiltStage, tempo: TempoMap) -> void:
 			st.errors.append("%s: worst landing column %d needs %d dashes, budget is %d"
 					% [s.id, worst_col, worst, budget])
 
-		st.report.append("%-4s %s  %dx%d  start c%d  mine %s  worst %d/%d dash  %.2fs ground  gap %.0fm"
-				% [s.id, s.act.substr(0, 3), s.width, s.length, s.start_col,
-					str(s.mine_cols), worst, budget, ground_seconds, s.gap_after])
+		var depth := grid.deduction_depth()
+		var max_clue := 0
+		for r in grid.length:
+			for c2 in grid.width:
+				var cell := Vector2i(c2, r)
+				if grid.state_at(cell) == MineGrid.Cell.REVEALED:
+					max_clue = maxi(max_clue, grid.number_at(cell))
+
+		st.report.append("%-4s %-3s %dx%-2d depth %-2s maxclue %d  worst %2d/%2d dash  %.2fs  gap %2.0fm  %s"
+				% [s.id, s.act.substr(0, 3), s.width, s.length,
+					("case" if depth < 0 else str(depth)), max_clue,
+					worst, budget, ground_seconds, s.gap_after, s.ascii_preview()])

@@ -1,4 +1,4 @@
-class_name CharacterAnimator
+﻿class_name CharacterAnimator
 extends Node3D
 
 ## GDD 14 - the fennec / kangaroo-rat mascot, built procedurally for greybox.
@@ -189,14 +189,14 @@ func _update_pose(delta: float) -> void:
 			# Anticipation -> smear -> arrival, compressed into the dash window.
 			var u := clampf(_dash_t / Tuning.DASH_TIME, 0.0, 1.4)
 			var smear := maxf(0.0, 1.0 - u) * 1.0
-			var stretch := 1.0 + 0.42 * smear
-			var squash := 1.0 - 0.24 * smear
+			var stretch := 1.0 + 0.78 * smear
+			var squash := 1.0 - 0.40 * smear
 			if absf(_dash_dir.x) > 0.5:
 				target_scale = Vector3(stretch, squash, squash)
-				target_rot = Vector3(0, 0, -_dash_dir.x * 22.0 * smear)
+				target_rot = Vector3(0, 0, -_dash_dir.x * 34.0 * smear)
 			else:
 				target_scale = Vector3(squash, squash, stretch)
-				target_rot = Vector3(-18.0 * smear, 0, 0)
+				target_rot = Vector3(-28.0 * smear, 0, 0)
 			target_rot.y = rad_to_deg(atan2(_dash_dir.x, _dash_dir.z)) * 0.25
 			lerp_rate = 26.0
 
@@ -210,14 +210,14 @@ func _update_pose(delta: float) -> void:
 		State.LAUNCH:
 			match grade:
 				LaunchController.Grade.PERFECT:
-					target_scale = Vector3(0.74, 1.52, 0.74)
-					target_rot = Vector3(-24, 0, 0)
+					target_scale = Vector3(0.58, 1.92, 0.58)
+					target_rot = Vector3(-34, 0, 0)
 				LaunchController.Grade.GOOD:
-					target_scale = Vector3(0.84, 1.34, 0.84)
-					target_rot = Vector3(-20, 14, 10)
+					target_scale = Vector3(0.70, 1.62, 0.70)
+					target_rot = Vector3(-26, 22, 16)
 				_:
-					target_scale = Vector3(1.06, 1.10, 1.06)
-					target_rot = Vector3(-8, 46, 32)
+					target_scale = Vector3(1.20, 1.14, 1.20)
+					target_rot = Vector3(-10, 70, 48)
 			head_rot = Vector3(-16, 0, 0)
 			tail_rot = Vector3(-64, 0, 0)
 
@@ -225,13 +225,13 @@ func _update_pose(delta: float) -> void:
 			# GDD 11.1: the pose opens, the scarf opens, the player breathes.
 			match grade:
 				LaunchController.Grade.PERFECT:
-					target_scale = Vector3(1.10, 0.94, 1.10)
+					target_scale = Vector3(1.22, 0.86, 1.22)
 					target_rot = Vector3(16, 0, 0)
 				LaunchController.Grade.GOOD:
 					target_scale = Vector3(1.06, 0.96, 1.06)
 					target_rot = Vector3(10, -22, -14)
 				_:
-					target_scale = Vector3(1.14, 0.90, 1.14)
+					target_scale = Vector3(1.32, 0.80, 1.32)
 					target_rot = Vector3(6, 150.0 * sin(_time * 3.0), 40)
 			head_rot = Vector3(-8, 0, 0)
 			tail_rot = Vector3(-10, 0, 0)
@@ -240,7 +240,7 @@ func _update_pose(delta: float) -> void:
 		State.FALL:
 			match grade:
 				LaunchController.Grade.PERFECT:
-					target_scale = Vector3(0.86, 1.24, 0.86)
+					target_scale = Vector3(0.74, 1.46, 0.74)
 					target_rot = Vector3(34, 0, 0)
 				LaunchController.Grade.GOOD:
 					target_scale = Vector3(0.92, 1.14, 0.92)
@@ -255,16 +255,16 @@ func _update_pose(delta: float) -> void:
 			var punch := (1.0 - lu) * (1.0 - lu)
 			match grade:
 				LaunchController.Grade.BAD:
-					target_scale = Vector3(1.0 + punch * 0.5, 1.0 - punch * 0.45, 1.0 + punch * 0.3)
+					target_scale = Vector3(1.0 + punch * 0.85, 1.0 - punch * 0.60, 1.0 + punch * 0.55)
 					target_rot = Vector3(-40.0 * punch, 0, 55.0 * punch)
 				_:
-					target_scale = Vector3(1.0 + punch * 0.34, 1.0 - punch * 0.34, 1.0 + punch * 0.2)
+					target_scale = Vector3(1.0 + punch * 0.60, 1.0 - punch * 0.48, 1.0 + punch * 0.38)
 					target_rot = Vector3(6.0 * punch, 0, 0)
 			lerp_rate = 20.0
 
 		State.GLIDE:
 			# GDD 10.2: low, unstable, comical - but still moving forward.
-			target_scale = Vector3(1.12, 0.88, 1.06)
+			target_scale = Vector3(1.26, 0.78, 1.16)
 			target_rot = Vector3(-12 + sin(_time * 5.3) * 9.0, sin(_time * 3.7) * 24.0,
 					sin(_time * 4.4) * 26.0)
 			head_rot = Vector3(-20, 0, 0)
@@ -368,3 +368,4 @@ func _update_scarf(delta: float) -> void:
 		seg.global_position = mid
 		seg.look_at(mid + dir, up, true)
 	_scarf_nodes[0].visible = false
+

@@ -10,8 +10,12 @@ const DECK_THICKNESS := 0.55
 const COVERED_RISE := 0.34            ## raised unopened slab vs. opened slab
 
 # --- ground movement ---------------------------------------------------------
-const DASH_TIME := 0.11               ## GDD 28: 0.10~0.16 s per one-tile dash
-const DASH_TIME_SAND := 0.19          ## GDD 9.2 [TEST]: sand-covered tile
+## GDD 28 offered 0.10~0.16 s as a *starting* range and marks it [TUNE].
+## Playtest said the game dragged, so this sits just under the fast end. The
+## dash still reads as one distinct move (GDD 7.2) because the smear, the grit
+## puff and the arrival snap all still land inside it.
+const DASH_TIME := 0.09
+const DASH_TIME_SAND := 0.16          ## GDD 9.2 [TEST]: sand-covered tile
 const INPUT_BUFFER := 0.14            ## one queued input, so 연타 never drops
 
 # --- beat structure (GDD 6 [LOCK]) -------------------------------------------
@@ -22,7 +26,7 @@ const APEX_BEAT_OFFSET := 2           ## [LOCK] apex sits on air beat 2
 # --- level validation --------------------------------------------------------
 ## Fraction of the ground phase reserved for *reading* the clues rather than
 ## dashing. The rest is the dash budget used by MineGrid reachability checks.
-const READ_RESERVE_FRAC := 0.42
+const READ_RESERVE_FRAC := 0.40
 
 # --- mine launch -------------------------------------------------------------
 const LAUNCH_GRAVITY := 20.0          ## drives apex height: h = g*(T/2)^2 / 2

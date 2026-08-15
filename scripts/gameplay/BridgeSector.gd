@@ -31,7 +31,7 @@ var _deck: Node3D
 var _cracks: Node3D
 var _tiles: Dictionary = {}          ## Vector2i -> Node3D
 var _covered_caps: Dictionary = {}   ## Vector2i -> Node3D
-var _mats: Dictionary = {}           ## key -> StandardMaterial3D, owned by this sector
+var _mats: Dictionary = {}           ## key -> ShaderMaterial, owned by this sector
 var _base_albedo: Dictionary = {}
 var _dust: Array[GPUParticles3D] = []
 
@@ -44,13 +44,14 @@ var _rng := RandomNumberGenerator.new()
 
 ## Every sector owns its own material instances so that damage can tint the
 ## whole body at once without touching any other sector.
-func _m(key: String, color: Color, rough: float = 0.92, metal: float = 0.0) -> StandardMaterial3D:
+func _m(key: String, color: Color, _rough: float = 1.0, metal: float = 0.0) -> ShaderMaterial:
 	if _mats.has(key):
 		return _mats[key]
-	var mt := StandardMaterial3D.new()
-	mt.albedo_color = color
-	mt.roughness = rough
-	mt.metallic = metal
+	var opts := {}
+	if metal > 0.4:
+		opts["rim"] = 1.6
+		opts["bands"] = 4.0
+	var mt := Greybox.toon(color, opts)
 	_mats[key] = mt
 	_base_albedo[key] = color
 	return mt
@@ -95,7 +96,7 @@ func _build_cell(cell: Vector2i) -> void:
 	_deck.add_child(node)
 	_tiles[cell] = node
 
-	var is_sand: bool = data.sand.has(cell)
+	var is_sand: bool = data.sand_cells.has(cell)
 	var slab_key := "sand" if is_sand else "deck"
 	var slab_color := Greybox.C_SAND if is_sand else Greybox.C_DECK
 	node.add_child(Greybox.mi(
@@ -218,9 +219,21 @@ func _build_structure() -> void:
 ## GDD 16: the crack network that widens across damage stages 1-3.
 func _build_cracks() -> void:
 	var half := float(data.width) * Tuning.TILE * 0.5
-	# Cracks stay behind the clue row and stay short, so a clue can never end up
-	# being read through one (GDD 15.3, and GDD 30 bans exactly this).
-	var span := float(maxi(0, data.clue_row() - 1)) * Tuning.TILE
+	# Cracks are confined to the rows nearest the player that carry no
+	# information at all - no covered slabs, no numbers. A clue can then never
+	# be read through a crack (GDD 15.3, and GDD 30 bans exactly this).
+	var last_blank := 0
+	for r in grid.length:
+		var blank := true
+		for c in grid.width:
+			var cell := Vector2i(c, r)
+			if grid.state_at(cell) != MineGrid.Cell.REVEALED or grid.number_at(cell) > 0:
+				blank = false
+				break
+		if not blank:
+			break
+		last_blank = r
+	var span := float(last_blank) * Tuning.TILE
 	var mt := _m("crack", Color(0.16, 0.13, 0.11), 1.0)
 	for i in maxi(4, data.length):
 		var z := -_rng.randf_range(0.0, span)
@@ -248,8 +261,8 @@ func set_damage(stage: int) -> void:
 	var tint: Color = DAMAGE_TINT[damage]
 	for key in _mats:
 		var base: Color = _base_albedo[key]
-		(_mats[key] as StandardMaterial3D).albedo_color = Color(
-			base.r * tint.r, base.g * tint.g, base.b * tint.b, base.a)
+		Greybox.set_albedo(_mats[key], Color(
+			base.r * tint.r, base.g * tint.g, base.b * tint.b, base.a))
 
 	_cracks.visible = damage > 0
 	for c in _cracks.get_children():
@@ -331,7 +344,26 @@ func _build_mine_visual() -> Node3D:
 ## single clue is *counting* - the adjacency relationship - and never which cell
 ## is the answer (GDD 30 forbids that outright). Offered only after the player
 ## has been struggling, and switchable off.
+## Picks the clue nearest the given landing column that actually constrains
+## something, so the hint below has something worth showing.
+func best_clue_for(col: int) -> Vector2i:
+	var best := Vector2i(-1, -1)
+	var best_score := 999.0
+	for r in grid.length:
+		for c in grid.width:
+			var cell := Vector2i(c, r)
+			if grid.state_at(cell) != MineGrid.Cell.REVEALED or grid.number_at(cell) <= 0:
+				continue
+			var score := absf(float(c - col)) + float(grid.length - r) * 0.35
+			if score < best_score:
+				best_score = score
+				best = cell
+	return best
+
+
 func flash_adjacency(clue: Vector2i) -> void:
+	if clue.x < 0:
+		return
 	var holder := Node3D.new()
 	add_child(holder)
 	var mt := StandardMaterial3D.new()

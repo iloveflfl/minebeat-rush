@@ -1,4 +1,4 @@
-extends Node3D
+﻿extends Node3D
 
 ## GDD 25 - stage start/end, Act transitions, the destination.
 ##
@@ -17,6 +17,8 @@ enum State { BOOT, FREE_MOVE, ARMED, ACCIDENT_AIR, GROUND, AIR, GATE_AIR, ARRIVE
 var state: State = State.BOOT
 
 var bridge: BridgeManager
+var backdrop: BackdropDirector
+var _pending_lights: Array = []
 var player: PlayerMotor
 var anim: CharacterAnimator
 var cam: CameraDirector
@@ -64,6 +66,7 @@ func _ready() -> void:
 	bridge.setup(stage)
 	bridge.build_intro_deck()
 	bridge.ensure_range(0)
+	backdrop.setup(absf(stage.gate_z), _pending_lights)
 
 	vfx = VFXDirector.new()
 	vfx.name = "VFX"
@@ -200,47 +203,82 @@ func _capture() -> void:
 # world dressing
 # ---------------------------------------------------------------------------
 
+## Cel shading wants flat, generous, unclipped light: no ambient occlusion
+## grime, no filmic roll-off eating the top end, and just enough bloom that the
+## bright things feel like they are glowing rather than merely pale.
 func _build_environment() -> void:
 	var env := Environment.new()
 	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.33, 0.53, 0.80)
-	sky_mat.sky_horizon_color = Color(0.86, 0.80, 0.66)
-	sky_mat.ground_bottom_color = Color(0.58, 0.46, 0.34)
-	sky_mat.ground_horizon_color = Color(0.80, 0.72, 0.56)
-	sky_mat.sun_angle_max = 12.0
+	sky_mat.sky_top_color = Color(0.36, 0.58, 0.92)
+	sky_mat.sky_horizon_color = Color(0.98, 0.92, 0.78)
+	sky_mat.sky_curve = 0.09
+	# The reading camera looks *down*, so most of the visible dome is the ground
+	# half. It gets the pale far-rock violet, which reads as distance haze
+	# instead of as a wall of sky.
+	sky_mat.ground_bottom_color = Greybox.C_ROCK_FAR.lightened(0.28)
+	sky_mat.ground_horizon_color = Greybox.C_ROCK_FAR.lightened(0.45)
+	sky_mat.sun_angle_max = 22.0
+	sky_mat.sun_curve = 0.08
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 1.0
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_white = 3.0
-	# GDD 15.2: haze so the bridge reads as kilometres long instead of tens of metres.
+
+	# Cel shading has no falloff to hide behind: whatever the light adds up to is
+	# exactly what lands on screen. Sun plus fill plus ambient is held just under
+	# 1.0 so an authored albedo arrives on screen as the colour it was picked as.
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.70, 0.78, 0.98)
+	env.ambient_light_energy = 0.22
+	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+	env.tonemap_white = 1.0
+
+	# GDD 15.2: haze so the bridge reads as kilometres long, and so the far
+	# canyon desaturates into the sky the way a painted background would.
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.79, 0.74, 0.64)
-	env.fog_density = 0.0012
-	env.fog_sky_affect = 0.35
-	env.ssao_enabled = true
-	env.ssao_intensity = 1.4
+	env.fog_light_color = Color(0.90, 0.88, 0.82)
+	env.fog_density = 0.0009
+	env.fog_sky_affect = 0.0
+	env.fog_aerial_perspective = 0.18
+
+	env.glow_enabled = true
+	env.glow_intensity = 0.32
+	env.glow_bloom = 0.12
+	env.glow_hdr_threshold = 0.95
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
+
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 1.08
+	env.adjustment_contrast = 1.04
+	env.adjustment_brightness = 1.02
 
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-46, 34, 0)
-	sun.light_color = Color(1.0, 0.94, 0.82)
-	sun.light_energy = 1.5
+	sun.rotation_degrees = Vector3(-52, 28, 0)
+	sun.light_color = Color(1.0, 0.97, 0.88)
+	sun.light_energy = 0.72
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 190.0
+	sun.shadow_blur = 0.6
+	sun.shadow_bias = 0.06
+	sun.shadow_normal_bias = 3.0
+	sun.directional_shadow_max_distance = 130.0
 	add_child(sun)
 
 	var fill := DirectionalLight3D.new()
-	fill.rotation_degrees = Vector3(-24, -140, 0)
-	fill.light_color = Color(0.74, 0.79, 0.92)
-	fill.light_energy = 0.22
+	fill.rotation_degrees = Vector3(-20, -145, 0)
+	fill.light_color = Color(0.72, 0.82, 1.0)
+	fill.light_energy = 0.12
 	add_child(fill)
+
+	backdrop = BackdropDirector.new()
+	backdrop.name = "Backdrop"
+	backdrop.env = env
+	backdrop.sky_mat = sky_mat
+	add_child(backdrop)
+	_pending_lights = [sun, fill]
 
 
 # ---------------------------------------------------------------------------
@@ -336,16 +374,14 @@ func _enter_ground(index: int, carry_x: float) -> void:
 	var g: MineGrid = stage.grids[index]
 	var sec := bridge.sector(index)
 
-	var sand := {}
-	for c in d.sand:
-		sand[c] = true
 	var col := SectorData.x_to_col(carry_x, d.width)
-	player.place_on(g, Vector3(0, 0, d.world_z), Vector2i(col, 0), sand)
+	player.place_on(g, Vector3(0, 0, d.world_z), Vector2i(col, 0), d.sand_cells)
 	player.input_enabled = true
 	player.allow_back = false
 	_last_arrival_song_time = -99.0
 
 	AudioDirector.set_act(d.act)
+	backdrop.set_act(d.act)
 	cam.set_view(CameraDirector.View.GROUND)
 	cam.frame_depth = maxf(9.0, float(d.length - 1) * Tuning.TILE + 3.0)
 	vfx.suppress = true               ## GDD 23: reading time is visually calm
@@ -357,7 +393,7 @@ func _enter_ground(index: int, carry_x: float) -> void:
 	if GameSettings.adjacency_hint_enabled and _consecutive_glides >= 2 \
 			and sec != null and _hinted_sector != index:
 		_hinted_sector = index
-		sec.flash_adjacency(Vector2i(col, d.clue_row()))
+		sec.flash_adjacency(sec.best_clue_for(col))
 
 
 ## GDD 6.1 [LOCK]: the whole sector is damaged as one body on beats 3, 2 and 1,
@@ -407,6 +443,11 @@ func _resolve_go() -> void:
 		var big := d.spectacle == "final_gap" or d.gap_after > 40.0
 		vfx.mine_launch(from, big)
 		AudioDirector.play("sfx_explosion", 1.0 if big else 0.85, 1.0 if big else 1.12)
+		# The comic layer on top of the real blast: the reversal is supposed to be
+		# funny, not frightening (GDD 4.2 / 12.2).
+		AudioDirector.play("sfx_pop", 0.8, 1.0 if big else 1.18, 0.05)
+		if grade == LaunchController.Grade.PERFECT:
+			AudioDirector.play("sfx_sparkle", 0.5, 1.0, 0.04)
 		cam.impulse(0.85 if big else 0.55, 9.0)
 		launch.begin_launch(go_beat, from, target, grade)
 		anim.set_state(CharacterAnimator.State.LAUNCH, grade)
@@ -418,6 +459,7 @@ func _resolve_go() -> void:
 		_streak = 0
 		_last_grade = LaunchController.Grade.BAD
 		AudioDirector.play("sfx_scarf", 0.9)
+		AudioDirector.play("sfx_boing", 0.55, 0.85, 0.08)
 		vfx.scarf_deploy(from)
 		launch.begin_glide(go_beat, from, target)
 		anim.set_state(CharacterAnimator.State.GLIDE, LaunchController.Grade.BAD)
@@ -484,6 +526,7 @@ func _arrive_at_gate(pos: Vector3) -> void:
 	anim.set_state(CharacterAnimator.State.CHEER)
 	cam.set_view(CameraDirector.View.GATE)
 	AudioDirector.set_act("Outro")
+	backdrop.set_act("Outro")
 	AudioDirector.play("sfx_gate", 0.9)
 	bridge.collapse_everything_behind(0)
 	AudioDirector.play("sfx_collapse", 1.0)
@@ -603,7 +646,8 @@ func _on_dash_started(dir: Vector2i, _to: Vector2i) -> void:
 
 func _on_dash_arrived(cell: Vector2i) -> void:
 	AudioDirector.play("sfx_step", 0.40, 1.0, 0.12)
-	vfx.dash_puff(player.global_position)
+	var d := player.dash_dir()
+	vfx.dash_puff(player.global_position, Vector3(float(d.x), 0.0, -float(d.y)))
 	_last_arrival_song_time = BeatConductor.song_time
 
 	if state == State.FREE_MOVE and cell == Stage1Data.INTRO_MINE:
@@ -624,3 +668,5 @@ func _restart() -> void:
 	AudioDirector.set_paused(false)
 	BeatConductor.stop()
 	get_tree().reload_current_scene()
+
+

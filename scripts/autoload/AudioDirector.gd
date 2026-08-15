@@ -7,19 +7,21 @@ extends Node
 ## per Act, so the bar downbeats always sit exactly on the GO beats no matter
 ## how the player plays (GDD 26 [LOCK] - audio is the master clock).
 
-const STEMS := ["drums", "bass", "lead", "atmos"]
-const SFX_POOL := 16
+const STEMS := ["drums", "bass", "lead", "atmos", "drive"]
+const SFX_POOL := 20
 
 ## Per-Act stem mix. GDD 18: the arrangement grows, the rules do not.
+## "drive" is the 16th-note layer; it is what stops the middle of the stage from
+## sagging once the novelty of the first blast has worn off.
 const ACT_MIX := {
-	"Intro":    {"drums": 0.00, "bass": 0.35, "lead": 0.00, "atmos": 1.00},
-	"Accident": {"drums": 0.70, "bass": 0.85, "lead": 0.00, "atmos": 1.00},
-	"Learn":    {"drums": 0.75, "bass": 0.90, "lead": 0.35, "atmos": 0.85},
-	"Master":   {"drums": 0.95, "bass": 1.00, "lead": 0.70, "atmos": 0.70},
-	"Escalate": {"drums": 1.00, "bass": 1.00, "lead": 0.95, "atmos": 0.60},
-	"Remix":    {"drums": 1.00, "bass": 1.00, "lead": 1.00, "atmos": 0.55},
-	"Finale":   {"drums": 1.00, "bass": 1.00, "lead": 1.00, "atmos": 0.90},
-	"Outro":    {"drums": 0.00, "bass": 0.30, "lead": 0.20, "atmos": 1.00},
+	"Intro":    {"drums": 0.00, "bass": 0.35, "lead": 0.00, "atmos": 1.00, "drive": 0.00},
+	"Accident": {"drums": 0.75, "bass": 0.85, "lead": 0.00, "atmos": 1.00, "drive": 0.25},
+	"Learn":    {"drums": 0.80, "bass": 0.90, "lead": 0.40, "atmos": 0.80, "drive": 0.30},
+	"Master":   {"drums": 1.00, "bass": 1.00, "lead": 0.75, "atmos": 0.60, "drive": 0.70},
+	"Escalate": {"drums": 1.00, "bass": 1.00, "lead": 0.95, "atmos": 0.45, "drive": 0.95},
+	"Remix":    {"drums": 1.00, "bass": 1.00, "lead": 1.00, "atmos": 0.40, "drive": 1.00},
+	"Finale":   {"drums": 1.00, "bass": 1.00, "lead": 1.00, "atmos": 0.75, "drive": 1.00},
+	"Outro":    {"drums": 0.00, "bass": 0.30, "lead": 0.25, "atmos": 1.00, "drive": 0.00},
 }
 
 var _players: Dictionary = {}          ## stem name -> AudioStreamPlayer

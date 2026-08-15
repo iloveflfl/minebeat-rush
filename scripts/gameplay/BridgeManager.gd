@@ -1,4 +1,4 @@
-class_name BridgeManager
+﻿class_name BridgeManager
 extends Node3D
 
 ## GDD 25: streams one enormous bridge sector by sector.
@@ -40,10 +40,12 @@ func build_intro_deck() -> BridgeSector:
 	intro_data = SectorData.new()
 	intro_data.id = "A0"
 	intro_data.act = "Intro"
+	# The intro deck is built as a grid rather than as an ASCII board: it has no
+	# puzzle to prove, so it never goes through the sector validator.
 	intro_data.width = Stage1Data.INTRO_WIDTH
 	intro_data.length = Stage1Data.INTRO_LENGTH
 	intro_data.world_z = 0.0
-	intro_data.mine_cols = [Stage1Data.INTRO_MINE.x]
+	intro_data.mine_cells = [Stage1Data.INTRO_MINE]
 
 	intro_sector = BridgeSector.new()
 	intro_sector.name = "IntroDeck"
@@ -94,31 +96,124 @@ func drop_sector(index: int) -> void:
 # the permanent structure: canyon, piers, ruined spans, destination
 # ---------------------------------------------------------------------------
 
+## GDD 5.1 + the Kirby research: a gorge with a river and things growing in it,
+## laid out in three depth bands that get paler and bluer as they recede. HAL's
+## fix for ruins reading as horror was literally "a bright blue sky and colourful
+## plant life" - so this canyon is alive, not abandoned.
 func _build_canyon() -> void:
-	var far_z := stage.gate_z - 160.0
-	var rock := Greybox.mat(Color(0.52, 0.40, 0.31), 1.0)
-	var rock2 := Greybox.mat(Color(0.60, 0.47, 0.36), 1.0)
-	var floor_mat := Greybox.mat(Color(0.68, 0.56, 0.40), 1.0)
+	var far_z := stage.gate_z - 200.0
+	var span := absf(far_z) + 460.0
+	# Thin ink on the mid band, none at all on the far band and the canyon floor.
+	# GDD 15.3: the background must never carry as much line weight as the deck.
+	var near_rock := Greybox.mat(Greybox.C_ROCK_NEAR, 1.0, 0.0, 0.0, 1.6)
+	var mid_rock := Greybox.mat(Greybox.C_ROCK_MID, 1.0, 0.0, 0.0, 1.2)
+	var far_rock := Greybox.mat(Greybox.C_ROCK_FAR, 1.0, 0.0, 0.0, 0.0)
+	var floor_mat := Greybox.mat(Color(0.86, 0.78, 0.58), 1.0, 0.0, 0.0, 0.0)
+	var water := Greybox.mat(Greybox.C_WATER, 1.0, 0.0, 0.22, 0.0)
+	var leaf := Greybox.mat(Greybox.C_LEAF, 1.0, 0.0, 0.0, 1.6)
+	var leaf_dark := Greybox.mat(Greybox.C_LEAF_DARK, 1.0, 0.0, 0.0, 1.6)
 
-	# Canyon floor, a long way down. GDD 5.1: this is a gorge, not a void.
-	_world.add_child(Greybox.mi(Greybox.box(Vector3(520.0, 8.0, absf(far_z) + 400.0)),
-			floor_mat, Vector3(0, -132.0, far_z * 0.5)))
+	# Canyon floor with a river running the whole length of it.
+	_world.add_child(Greybox.mi(Greybox.box(Vector3(560.0, 8.0, span)),
+			floor_mat, Vector3(0, -134.0, far_z * 0.5)))
+	_world.add_child(Greybox.mi(Greybox.box(Vector3(46.0, 1.2, span)),
+			water, Vector3(0, -129.4, far_z * 0.5)))
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 4242
 	for side in [-1.0, 1.0]:
-		_world.add_child(Greybox.mi(Greybox.box(Vector3(140.0, 210.0, absf(far_z) + 400.0)),
-				rock, Vector3(side * 200.0, -30.0, far_z * 0.5)))
+		# Far band - almost sky-coloured. This is the aerial-perspective layer.
+		_world.add_child(Greybox.mi(Greybox.box(Vector3(160.0, 260.0, span)),
+				far_rock, Vector3(side * 260.0, -10.0, far_z * 0.5)))
 		var z := 40.0
 		while z > far_z:
-			var w := rng.randf_range(20.0, 55.0)
-			var h := rng.randf_range(50.0, 170.0)
-			var mesa := Greybox.mi(Greybox.box(Vector3(w, h, rng.randf_range(24.0, 70.0))),
-					rock2 if rng.randf() > 0.5 else rock,
-					Vector3(side * rng.randf_range(105.0, 165.0), -70.0 + h * 0.5, z))
+			# Mid band - stacked mesas with green tops.
+			var w := rng.randf_range(24.0, 62.0)
+			var h := rng.randf_range(60.0, 190.0)
+			var x: float = side * rng.randf_range(112.0, 190.0)
+			var mesa := Greybox.mi(Greybox.box(Vector3(w, h, rng.randf_range(28.0, 78.0))),
+					mid_rock if rng.randf() > 0.45 else far_rock,
+					Vector3(x, -74.0 + h * 0.5, z))
 			mesa.rotation_degrees = Vector3(0, rng.randf_range(-16, 16), 0)
 			_world.add_child(mesa)
-			z -= rng.randf_range(45.0, 90.0)
+			if rng.randf() > 0.35:
+				_world.add_child(Greybox.mi(Greybox.box(Vector3(w * 0.95, 3.0, w * 0.6)),
+						leaf if rng.randf() > 0.5 else leaf_dark,
+						Vector3(x, -74.0 + h + 1.0, z)))
+
+			# Near band - warm rock shelves close to the bridge, with palms.
+			if rng.randf() > 0.45:
+				var sh := rng.randf_range(10.0, 28.0)
+				var sx: float = side * rng.randf_range(52.0, 84.0)
+				var sy := rng.randf_range(-70.0, -18.0)
+				_world.add_child(Greybox.mi(
+						Greybox.box(Vector3(rng.randf_range(16.0, 34.0), sh,
+								rng.randf_range(14.0, 30.0))),
+						near_rock, Vector3(sx, sy, z + rng.randf_range(-14, 14))))
+				for p in rng.randi_range(1, 3):
+					_add_palm(Vector3(sx + rng.randf_range(-8, 8), sy + sh * 0.5,
+							z + rng.randf_range(-10, 10)), rng)
+			z -= rng.randf_range(42.0, 84.0)
+
+	_build_distant_arches(far_z, rng)
+
+
+## Big readable silhouettes crossing the canyon in the middle distance: the
+## older aqueducts this bridge replaced. Kirby backgrounds are built out of a
+## few large simple shapes rather than a lot of small detail, and these are what
+## stop the space between the deck and the far wall from being empty air.
+func _build_distant_arches(far_z: float, rng: RandomNumberGenerator) -> void:
+	var stone := Greybox.mat(Greybox.C_ROCK_MID.lerp(Greybox.C_PIER, 0.4), 1.0, 0.0, 0.0, 1.2)
+	var pale := Greybox.mat(Greybox.C_ROCK_FAR.lerp(Greybox.C_ROCK_MID, 0.3), 1.0, 0.0, 0.0, 0.0)
+	var z := -260.0
+	var idx := 0
+	while z > far_z + 120.0:
+		var deep := idx % 2 == 1
+		var m := pale if deep else stone
+		var y := rng.randf_range(-82.0, -38.0)
+		var tilt := rng.randf_range(-7.0, 7.0)
+		var arch := Node3D.new()
+		arch.position = Vector3(rng.randf_range(-30.0, 30.0), y, z)
+		arch.rotation_degrees = Vector3(0, rng.randf_range(-26.0, 26.0), tilt)
+		# Deck across the gorge...
+		arch.add_child(Greybox.mi(Greybox.box(Vector3(320.0, 7.0, 12.0)), m, Vector3.ZERO))
+		# ...on a row of legs, with a few arches already fallen through.
+		for k in 9:
+			if rng.randf() < 0.22:
+				continue
+			var lx := -140.0 + float(k) * 35.0
+			var lh := rng.randf_range(40.0, 90.0)
+			arch.add_child(Greybox.mi(Greybox.box(Vector3(9.0, lh, 10.0)), m,
+					Vector3(lx, -lh * 0.5 - 3.0, 0)))
+			arch.add_child(Greybox.mi(Greybox.box(Vector3(26.0, 5.0, 11.0)), m,
+					Vector3(lx + 17.0, -6.0, 0)))
+		if rng.randf() > 0.5:
+			arch.add_child(Greybox.mi(Greybox.box(Vector3(46.0, 4.0, 13.0)), m,
+					Vector3(rng.randf_range(-90, 90), 5.5, 0)))
+		_world.add_child(arch)
+		z -= rng.randf_range(190.0, 320.0)
+		idx += 1
+
+
+## A cartoon palm: one leaning trunk and a spray of fat rounded fronds. Small,
+## cheap, and the single strongest signal that this place is not dead.
+func _add_palm(at: Vector3, rng: RandomNumberGenerator) -> void:
+	var palm := Node3D.new()
+	palm.position = at
+	palm.rotation_degrees = Vector3(rng.randf_range(-8, 8), rng.randf_range(0, 360),
+			rng.randf_range(-8, 8))
+	var h := rng.randf_range(7.0, 14.0)
+	palm.add_child(Greybox.mi(Greybox.cyl(0.55, h, 7), Greybox.mat(Greybox.C_TRUNK),
+			Vector3(0, h * 0.5, 0)))
+	var fronds := rng.randi_range(5, 7)
+	for i in fronds:
+		var a := TAU * float(i) / float(fronds)
+		var frond := Greybox.mi(Greybox.box(Vector3(6.5, 0.45, 2.0)),
+				Greybox.mat(Greybox.C_LEAF if i % 2 == 0 else Greybox.C_LEAF_DARK),
+				Vector3(cos(a) * 3.0, h + 0.4, sin(a) * 3.0))
+		frond.rotation_degrees = Vector3(0, -rad_to_deg(a), rng.randf_range(-24, -8))
+		palm.add_child(frond)
+	_world.add_child(palm)
 
 
 ## GDD 5.1 / 9.1: piers march the whole length of the canyon on their own rhythm,
@@ -143,6 +238,7 @@ func _build_continuous_structure() -> void:
 					Vector3(side * 3.6, -4.2, 0)))
 		group.add_child(Greybox.mi(Greybox.box(Vector3(9.5, 2.0, 2.6)), pier,
 				Vector3(0, -12.0, 0)))
+		_dress_pier(group, rng)
 		z -= 26.0
 
 	# Ruined spans in every gap between authored sectors.
@@ -170,6 +266,41 @@ func _build_continuous_structure() -> void:
 				Vector3(0, -1.45, span_end + 0.9)))
 
 
+## The bridge has been reclaimed rather than abandoned: vines with flowers spill
+## off the piers, banners still hang from the stonework. This is the whole point
+## of the Kirby research - the ruin has to read as "the prosperity and joy of
+## what once was", never as a horror set.
+func _dress_pier(group: Node3D, rng: RandomNumberGenerator) -> void:
+	var vine := Greybox.mat(Greybox.C_LEAF_DARK)
+	var leaf := Greybox.mat(Greybox.C_LEAF)
+	var banner_cols := [Greybox.C_BANNER, Greybox.C_FLOWER_A, Greybox.C_FLOWER_B]
+
+	for side in [-1.0, 1.0]:
+		if rng.randf() > 0.45:
+			var len_ := rng.randf_range(5.0, 16.0)
+			var x: float = side * rng.randf_range(3.2, 4.6)
+			group.add_child(Greybox.mi(Greybox.box(Vector3(0.35, len_, 0.35)), vine,
+					Vector3(x, -2.0 - len_ * 0.5, rng.randf_range(-1.0, 1.0))))
+			for k in rng.randi_range(2, 5):
+				var y := -2.5 - rng.randf() * len_
+				group.add_child(Greybox.mi(Greybox.sphere(rng.randf_range(0.5, 1.0), 8), leaf,
+						Vector3(x + rng.randf_range(-0.9, 0.9), y, rng.randf_range(-0.9, 0.9))))
+				if rng.randf() > 0.55:
+					group.add_child(Greybox.mi(Greybox.sphere(0.42, 7),
+							Greybox.mat(Greybox.C_FLOWER_A if rng.randf() > 0.5
+									else Greybox.C_FLOWER_B, 1.0, 0.0, 0.3),
+							Vector3(x + rng.randf_range(-1.2, 1.2), y - 0.4,
+									rng.randf_range(-1.2, 1.2))))
+		if rng.randf() > 0.6:
+			var col: Color = banner_cols[rng.randi() % banner_cols.size()]
+			var bh := rng.randf_range(4.0, 8.0)
+			group.add_child(Greybox.mi(Greybox.box(Vector3(0.18, bh, 2.6)),
+					Greybox.mat(col), Vector3(side * 5.0, -1.0 - bh * 0.5, 0)))
+			group.add_child(Greybox.mi(Greybox.cone(1.3, 1.6, 6),
+					Greybox.mat(col.darkened(0.2)),
+					Vector3(side * 5.0, -1.0 - bh, 0)))
+
+
 ## GDD 5.1 / 21: the destination is on screen from the first second and the
 ## player actually lands on it (Acceptance Criteria 11).
 func _build_sun_gate() -> void:
@@ -180,7 +311,7 @@ func _build_sun_gate() -> void:
 
 	var stone := Greybox.mat(Color(0.78, 0.66, 0.46), 0.85)
 	var dark := Greybox.mat(Color(0.46, 0.36, 0.26), 0.9)
-	var gold := Greybox.mat(Color(1.0, 0.80, 0.32), 0.25, 0.9, 1.6)
+	var gold := Greybox.mat(Color(1.0, 0.84, 0.36), 0.25, 0.0, 0.45, 2.2)
 
 	# Landing platform - 5 tiles wide so the final launch has somewhere to land.
 	_gate.add_child(Greybox.mi(Greybox.box(Vector3(14.0, 1.2, 22.0)), stone,
@@ -202,21 +333,23 @@ func _build_sun_gate() -> void:
 			Vector3(0, 87.0, -18.0)))
 
 	# The sun disc in the gateway - the thing you have been walking toward.
-	var disc := Greybox.mi(Greybox.cyl(11.0, 1.2, 32), gold, Vector3(0, 44.0, -20.0))
+	var disc := Greybox.mi(Greybox.cyl(11.0, 1.2, 32), gold, Vector3(0, 37.0, -20.0))
 	disc.rotation_degrees = Vector3(90, 0, 0)
 	_gate.add_child(disc)
 	for i in 12:
 		var a := TAU * float(i) / 12.0
 		var ray := Greybox.mi(Greybox.box(Vector3(1.1, 0.6, 7.0)), gold,
-				Vector3(cos(a) * 15.5, 44.0 + sin(a) * 15.5, -20.0))
+				Vector3(cos(a) * 15.5, 37.0 + sin(a) * 15.5, -20.0))
 		ray.rotation_degrees = Vector3(90, 0, rad_to_deg(a))
 		_gate.add_child(ray)
 
+	# Warm key on the gateway, kept low: cel shading has no headroom, and a hot
+	# lamp here flattens the whole structure into one blown-out yellow shape.
 	var lamp := OmniLight3D.new()
-	lamp.light_color = Color(1.0, 0.85, 0.45)
-	lamp.light_energy = 8.0
-	lamp.omni_range = 70.0
-	lamp.position = Vector3(0, 44.0, -18.0)
+	lamp.light_color = Color(1.0, 0.86, 0.52)
+	lamp.light_energy = 2.4
+	lamp.omni_range = 48.0
+	lamp.position = Vector3(0, 37.0, -17.0)
 	_gate.add_child(lamp)
 
 
@@ -232,3 +365,4 @@ func collapse_everything_behind(from_index: int) -> void:
 			s.collapse()
 	if intro_sector != null and is_instance_valid(intro_sector):
 		intro_sector.collapse()
+

@@ -40,8 +40,8 @@ const VIEWS := {
 					 "aim_y": -3.0},
 	# Looks *up* at the gate, so the thing you have been running toward finally
 	# fills the frame (GDD 21.1 third "wow" moment).
-	View.GATE:      {"h": 13.0, "back": 34.0, "ahead": 20.0, "fov": 64.0, "snap": 1.8,
-					 "aim_y": 26.0},
+	View.GATE:      {"h": 11.0, "back": 44.0, "ahead": 22.0, "fov": 62.0, "snap": 1.6,
+					 "aim_y": 24.0},
 }
 
 ## Depth of the deck the reading views have to frame, in metres.
@@ -65,8 +65,10 @@ var _rng := RandomNumberGenerator.new()
 func _ready() -> void:
 	camera = Camera3D.new()
 	camera.current = true
-	camera.far = 3000.0
-	camera.near = 0.15
+	# A tight depth range: the ink hull sits centimetres off each surface, and at
+	# near 0.15 / far 3000 the depth buffer cannot tell them apart.
+	camera.far = 2200.0
+	camera.near = 0.6
 	add_child(camera)
 	_rng.randomize()
 
