@@ -48,17 +48,33 @@
       "w": 269,
       "h": 267
     },
+    "faceonly_happy": {
+      "w": 260,
+      "h": 150
+    },
     "face_surprised": {
       "w": 288,
       "h": 267
+    },
+    "faceonly_surprised": {
+      "w": 285,
+      "h": 150
     },
     "face_determined": {
       "w": 283,
       "h": 264
     },
+    "faceonly_determined": {
+      "w": 279,
+      "h": 148
+    },
     "face_worried": {
       "w": 281,
       "h": 263
+    },
+    "faceonly_worried": {
+      "w": 276,
+      "h": 148
     }
   }
 }

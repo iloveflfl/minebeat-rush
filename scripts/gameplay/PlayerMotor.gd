@@ -44,11 +44,27 @@ var _buffer_age := 0.0
 var last_arrival_time := -1.0
 
 
-func cell_to_world(c: Vector2i) -> Vector3:
-	return origin + Vector3(
+## How high the walkable surface of a cell is above the deck plane. An unopened
+## slab is a raised button, so standing on one has to actually put the character
+## on top of it - without this the feet sink through the tile they are on.
+func surface_height(c: Vector2i) -> float:
+	if grid != null and grid.state_at(c) == MineGrid.Cell.COVERED:
+		return Tuning.COVERED_RISE
+	return 0.0
+
+
+## Position of a cell relative to `origin`. Kept separate from origin so the
+## deck can settle underneath the player (GDD 6.1) without invalidating a dash
+## that is already in flight.
+func local_cell_pos(c: Vector2i) -> Vector3:
+	return Vector3(
 		(float(c.x) - float(deck_width - 1) * 0.5) * Tuning.TILE,
-		0.0,
+		surface_height(c),
 		-float(c.y) * Tuning.TILE)
+
+
+func cell_to_world(c: Vector2i) -> Vector3:
+	return origin + local_cell_pos(c)
 
 
 func place_on(g: MineGrid, deck_origin: Vector3, at: Vector2i, sand: Dictionary = {}) -> void:
@@ -123,8 +139,8 @@ func _try_dash(d: Vector2i) -> bool:
 		return false
 
 	_dir = d
-	_from = position
-	_to = cell_to_world(target)
+	_from = local_cell_pos(cell)
+	_to = local_cell_pos(target)
 	_elapsed = 0.0
 	_duration = Tuning.DASH_TIME_SAND if sand_cells.has(target) else Tuning.DASH_TIME
 	_dashing = true
@@ -147,13 +163,16 @@ func _process(delta: float) -> void:
 		var u := clampf(_elapsed / _duration, 0.0, 1.0)
 		# Hard out of the start, settle into the destination.
 		var e := 1.0 - pow(1.0 - u, 2.6)
-		position = _from.lerp(_to, e)
+		# A small hop over the gap between two tile tops, so stepping up onto a
+		# raised slab reads as a step rather than as a slide.
+		var hop := sin(u * PI) * 0.10
+		position = origin + _from.lerp(_to, e) + Vector3(0, hop, 0)
 		if u >= 1.0:
 			_finish_dash()
-
-	# The deck the player is standing on sinks as it takes damage (GDD 6.1).
-	# origin.y is driven by GameDirector from the live sector body.
-	position.y = origin.y
+	else:
+		# origin.y is driven by GameDirector from the live sector body, so the
+		# player settles with the deck as it takes damage (GDD 6.1).
+		position = origin + local_cell_pos(cell)
 
 
 func _finish_dash() -> void:

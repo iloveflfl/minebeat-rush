@@ -1,4 +1,4 @@
-class_name CameraDirector
+﻿class_name CameraDirector
 extends Node3D
 
 ## GDD 13 - the camera breathes between reading and spectacle.
@@ -27,10 +27,10 @@ const VIEWS := {
 	# grid big and the perspective distortion low, which is what makes a row of
 	# numbers readable at a glance.
 	View.GROUND:    {"h": 16.0, "back": 8.0,  "ahead": 7.0,  "fov": 42.0, "snap": 5.0},
-	View.LAUNCH:    {"h": 3.0,  "back": 7.5,  "ahead": 2.0,  "fov": 76.0, "snap": 9.0},
-	View.AIR_RISE:  {"h": 4.0,  "back": 10.0, "ahead": 4.0,  "fov": 72.0, "snap": 4.5},
-	View.APEX:      {"h": 9.0,  "back": 13.0, "ahead": 12.0, "fov": 66.0, "snap": 2.6},
-	View.FALL:      {"h": 11.0, "back": 13.0, "ahead": 14.0, "fov": 64.0, "snap": 3.4},
+	View.LAUNCH:    {"h": 2.4,  "back": 5.0,  "ahead": 1.0,  "fov": 70.0, "snap": 16.0},
+	View.AIR_RISE:  {"h": 2.6,  "back": 6.0,  "ahead": 2.0,  "fov": 62.0, "snap": 14.0},
+	View.APEX:      {"h": 2.2,  "back": 5.4,  "ahead": 2.0,  "fov": 50.0, "snap": 11.0},
+	View.FALL:      {"h": 5.0,  "back": 8.5,  "ahead": 8.0,  "fov": 60.0, "snap": 10.0},
 	View.LANDING:   {"h": 16.0, "back": 8.0,  "ahead": 7.0,  "fov": 42.0, "snap": 6.5},
 	# GDD 10.2: a scarf glide sags well below the deck, and the sector it just
 	# left is falling through the same space. The glide view sits high enough to
@@ -146,3 +146,5 @@ func warp_to_target() -> void:
 	_fov = float(cfg["fov"])
 	_pitch = rad_to_deg(atan2(-(float(cfg["h"]) - float(cfg.get("aim_y", 0.0))),
 			float(cfg["back"]) + float(cfg["ahead"])))
+
+

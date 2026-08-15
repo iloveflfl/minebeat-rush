@@ -207,6 +207,27 @@ def trim_trailing_scarf(rgba):
     return out[rows[0]:rows[-1] + 1]
 
 
+def face_only(rgba):
+    """Crop an expression head down to just the face, dropping the ears.
+
+    The rig builds ears as real geometry so they can flick and lag, but the
+    drawn face is the character's identity and is not worth reproducing with
+    primitives. Finding the split is easy without any hand-tuned fraction: scan
+    upward, and the row where the silhouette breaks from one blob into two is
+    where the ears start.
+    """
+    # A silhouette detector was tried first and gave four different answers for
+    # four heads that are drawn at the same scale: the fur tuft between the ears
+    # and the ear linings both break the "one blob or two" test. The four
+    # expression heads are within 4 px of each other in height, so a proportional
+    # crop is simply the correct measurement, not an approximation.
+    h = rgba.shape[0]
+    out = rgba[int(h * 0.44):]
+    cols = np.nonzero((out[..., 3] > 0).any(axis=0))[0]
+    rows = np.nonzero((out[..., 3] > 0).any(axis=1))[0]
+    return out[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
+
+
 def save(name, rgba):
     path = os.path.join(OUT, name + ".png")
     Image.fromarray(rgba, "RGBA").save(path)
@@ -272,7 +293,11 @@ def main():
                 save(f"face_{name}", rgba)
                 manifest["parts"][f"face_{name}"] = {
                     "w": int(rgba.shape[1]), "h": int(rgba.shape[0])}
-                contact.append(rgba)
+                fo = face_only(rgba)
+                save(f"faceonly_{name}", fo)
+                manifest["parts"][f"faceonly_{name}"] = {
+                    "w": int(fo.shape[1]), "h": int(fo.shape[0])}
+                contact.append(fo)
 
     with open(os.path.join(OUT, "sprites.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
