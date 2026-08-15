@@ -56,9 +56,10 @@ func _apply_quality_tier() -> void:
 	vp.msaa_3d = Quality.msaa()
 	vp.scaling_3d_scale = Quality.render_scale()
 	# Screen-space AA does not exist on the Compatibility renderer the web build
-	# uses, and asking for it there is just a warning per frame.
-	vp.screen_space_aa = (Viewport.SCREEN_SPACE_AA_DISABLED if Quality.is_mobile()
-			else Viewport.SCREEN_SPACE_AA_FXAA)
+	# uses - asking for it there only logs a warning.
+	var want_fxaa := not Quality.is_mobile() and not Quality.is_compatibility()
+	vp.screen_space_aa = (Viewport.SCREEN_SPACE_AA_FXAA if want_fxaa
+			else Viewport.SCREEN_SPACE_AA_DISABLED)
 	print("MineBeat Rush - quality tier: %s" % Quality.describe())
 
 
