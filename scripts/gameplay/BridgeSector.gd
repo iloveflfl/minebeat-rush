@@ -33,6 +33,7 @@ var _tiles: Dictionary = {}          ## Vector2i -> Node3D
 var _covered_caps: Dictionary = {}   ## Vector2i -> Node3D
 var _mats: Dictionary = {}           ## key -> ShaderMaterial, owned by this sector
 var _base_albedo: Dictionary = {}
+var _tile_keys: Dictionary = {}      ## keys whose material is the tile shader
 var _dust: Array[GPUParticles3D] = []
 
 var _collapsing := false
@@ -54,6 +55,18 @@ func _m(key: String, color: Color, _rough: float = 1.0, metal: float = 0.0) -> S
 	var mt := Greybox.toon(color, opts)
 	_mats[key] = mt
 	_base_albedo[key] = color
+	return mt
+
+
+## Tile faces are their own materials so a sector can tint them with damage
+## alongside everything else.
+func _tile_mat(key: String, covered: bool, face: Color) -> ShaderMaterial:
+	if _mats.has(key):
+		return _mats[key]
+	var mt := Greybox.tile_material(covered, face)
+	_mats[key] = mt
+	_base_albedo[key] = face
+	_tile_keys[key] = true
 	return mt
 
 
@@ -99,10 +112,15 @@ func _build_cell(cell: Vector2i) -> void:
 	var is_sand: bool = data.sand_cells.has(cell)
 	var slab_key := "sand" if is_sand else "deck"
 	var slab_color := Greybox.C_SAND if is_sand else Greybox.C_DECK
+	# The slab body carries the thickness; its face carries the Minesweeper
+	# bevel and grid line (see shaders/tile.gdshader).
 	node.add_child(Greybox.mi(
-		Greybox.box(Vector3(Tuning.TILE - 0.07, Tuning.DECK_THICKNESS, Tuning.TILE - 0.07)),
-		_m(slab_key, slab_color),
+		Greybox.box(Vector3(Tuning.TILE, Tuning.DECK_THICKNESS, Tuning.TILE)),
+		_m(slab_key, slab_color.darkened(0.18)),
 		Vector3(0, -Tuning.DECK_THICKNESS * 0.5, 0)))
+	if state != MineGrid.Cell.COVERED:
+		node.add_child(Greybox.mi(Greybox.plane(Vector2(Tuning.TILE, Tuning.TILE)),
+				_tile_mat("open_" + slab_key, false, slab_color), Vector3(0, 0.006, 0)))
 
 	match state:
 		MineGrid.Cell.COVERED:
@@ -117,18 +135,21 @@ func _build_cell(cell: Vector2i) -> void:
 
 ## GDD 8.1: an unopened slab is a raised, strongly bevelled stone that reads as
 ## "press me". A two-step profile keeps that silhouette from any camera angle.
+## GDD 8.1: an unopened slab is a raised button. One block of the right height
+## plus the bevelled face shader, rather than a stack of shrinking boxes - the
+## bevel is drawn, so it stays crisp at any distance and any tile size.
 func _build_covered_cap(node: Node3D, cell: Vector2i) -> void:
 	var cap := Node3D.new()
 	cap.name = "Cap"
 	node.add_child(cap)
 	cap.add_child(Greybox.mi(
-		Greybox.box(Vector3(Tuning.TILE - 0.07, Tuning.COVERED_RISE * 0.45, Tuning.TILE - 0.07)),
-		_m("cov_rim", Greybox.C_COVERED_RIM),
-		Vector3(0, Tuning.COVERED_RISE * 0.22, 0)))
+		Greybox.box(Vector3(Tuning.TILE, Tuning.COVERED_RISE, Tuning.TILE)),
+		_m("cov_side", Greybox.C_COVERED.darkened(0.30)),
+		Vector3(0, Tuning.COVERED_RISE * 0.5, 0)))
 	cap.add_child(Greybox.mi(
-		Greybox.box(Vector3(Tuning.TILE - 0.34, Tuning.COVERED_RISE * 0.62, Tuning.TILE - 0.34)),
-		_m("cov_top", Greybox.C_COVERED, 0.85),
-		Vector3(0, Tuning.COVERED_RISE * 0.70, 0)))
+		Greybox.plane(Vector2(Tuning.TILE, Tuning.TILE)),
+		_tile_mat("cov_face", true, Greybox.C_COVERED),
+		Vector3(0, Tuning.COVERED_RISE + 0.006, 0)))
 	_covered_caps[cell] = cap
 
 
@@ -261,8 +282,14 @@ func set_damage(stage: int) -> void:
 	var tint: Color = DAMAGE_TINT[damage]
 	for key in _mats:
 		var base: Color = _base_albedo[key]
-		Greybox.set_albedo(_mats[key], Color(
-			base.r * tint.r, base.g * tint.g, base.b * tint.b, base.a))
+		var c := Color(base.r * tint.r, base.g * tint.g, base.b * tint.b, base.a)
+		if _tile_keys.has(key):
+			var mt: ShaderMaterial = _mats[key]
+			mt.set_shader_parameter("face_color", c)
+			mt.set_shader_parameter("bevel_light", c.lightened(0.42))
+			mt.set_shader_parameter("bevel_dark", c.darkened(0.34))
+		else:
+			Greybox.set_albedo(_mats[key], c)
 
 	_cracks.visible = damage > 0
 	for c in _cracks.get_children():

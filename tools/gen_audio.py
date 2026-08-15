@@ -224,6 +224,7 @@ atmos = np.zeros(N)
 drive = np.zeros(N)
 
 bars = TOTAL_BEATS // 4
+kick_times = []
 
 for bar in range(bars):
     b0 = bar * 4
@@ -231,17 +232,26 @@ for bar in range(bars):
     beat_len = 60.0 / bpm_at(b0)
     chord = PROG[(bar // 4) % len(PROG)]
 
-    # --- drums: downbeat == GO. one kick every bar, on every GO. -------------
-    place(drums, tb, kick(rng=rng), 1.0)
-    place(drums, t_at(b0 + 2), snare(rng=rng), 0.55)
-    place(drums, t_at(b0 + 1), frame_drum(rng=rng), 0.30)
-    place(drums, t_at(b0 + 3), frame_drum(f=104.0, rng=rng), 0.24)
-    if bar % 2 == 1:
-        place(drums, t_at(b0 + 3.5), kick(dur=0.26, rng=rng), 0.5)
+    # --- drums: four on the floor. Every beat gets a kick, the bar downbeat
+    #     (which is always a GO) gets the loudest one. Offbeat open hats and a
+    #     clap on 2 and 4 are the rest of the techno skeleton.
+    for k in range(4):
+        accent = 1.0 if k == 0 else 0.72
+        place(drums, t_at(b0 + k), kick(rng=rng), accent)
+        kick_times.append(t_at(b0 + k))
+    for k in (1.0, 3.0):
+        place(drums, t_at(b0 + k), snare(dur=0.24, rng=rng), 0.50)
     for k in range(8):
         bb = b0 + k * 0.5
-        g = 0.30 if k % 2 == 0 else 0.18
-        place(drums, t_at(bb), hat(rng=rng), g)
+        if k % 2 == 1:
+            place(drums, t_at(bb), hat(dur=0.16, bright=5200.0, rng=rng), 0.34)
+        else:
+            place(drums, t_at(bb), hat(dur=0.05, bright=9000.0, rng=rng), 0.14)
+    # Every fourth bar, a snare roll winds into the next GO.
+    if bar % 4 == 3:
+        for k in range(8):
+            place(drums, t_at(b0 + 3.0 + k * 0.125),
+                  snare(dur=0.12, rng=rng), 0.16 + 0.05 * k)
 
     # --- bass: root on the downbeat, octave push on the "1" count ------------
     root = D3 * (2.0 ** (chord / 12.0))
@@ -249,13 +259,18 @@ for bar in range(bars):
     place(bass, t_at(b0 + 2), bass_note(root, beat_len * 0.9), 0.65)
     place(bass, t_at(b0 + 3), bass_note(root * (2 ** (7 / 12.0)), beat_len * 0.9), 0.55)
 
-    # --- lead: a 4-beat phrase, deterministic per bar ------------------------
-    phrase = [(0.0, 0), (1.0, 3), (1.5, 4), (2.0, 2), (3.0, 5), (3.5, 4)]
-    if bar % 4 == 3:
-        phrase = [(0.0, 7), (0.75, 6), (1.5, 4), (2.25, 3), (3.0, 2), (3.5, 1)]
-    for off, deg in phrase:
-        f = D4 * (2.0 ** ((chord + SCALE[deg % len(SCALE)] + 12 * (deg // len(SCALE))) / 12.0))
-        place(lead, t_at(b0 + off), pluck(f, beat_len * 0.9, rng=rng), 0.5)
+    # --- lead: a 16th-note saw arp. This is the line that makes it read as
+    #     techno rather than as a folk tune in a hat.
+    arp = [0, 2, 4, 6, 4, 2, 4, 7]
+    for k in range(16):
+        deg = arp[k % len(arp)] + (7 if (bar % 4 == 3 and k >= 8) else 0)
+        f = D4 * (2.0 ** ((chord + SCALE[deg % len(SCALE)]
+                           + 12 * (deg // len(SCALE))) / 12.0))
+        # Filter opens across the bar, the classic rising-tension move.
+        cutoff = 900.0 + 3200.0 * (k / 15.0)
+        place(lead, t_at(b0 + k * 0.25),
+              pluck(f, beat_len * 0.30, kind="saw", cutoff=cutoff, decay=0.09, rng=rng),
+              0.30 if k % 2 else 0.44)
 
     # --- drive: the "stop dragging" stem. 16ths, claps and a fill every 4th
     #     bar. Faded in from Act 2 onward so the stage physically speeds up
@@ -283,6 +298,32 @@ for bar in range(bars):
     place(atmos, tb, drone, 0.55)
     rl = t_at(b0 + 4) - t_at(b0 + 2.5)
     place(atmos, t_at(b0 + 2.5), riser(rl, rng=rng), 0.42)
+
+
+# ----------------------------------------------------------------------------
+# Sidechain. Everything that is not the drums ducks under every kick and swells
+# back - the pump that makes four-on-the-floor feel like it is breathing. It is
+# also the single strongest way to hear the beat grid, which matters here for
+# more than style: the player is being asked to land their last dash on the GO
+# (GDD 11.2), so the beat has to be impossible to miss.
+# ----------------------------------------------------------------------------
+
+def sidechain(buf, times, depth=0.72, release=0.16):
+    gain = np.ones(buf.size)
+    idx = np.clip((np.array(times) * SR).astype(int), 0, buf.size - 1)
+    env_len = int(release * 4.0 * SR)
+    shape = 1.0 - depth * np.exp(-np.arange(env_len) / (release * SR))
+    for i in idx:
+        end = min(buf.size, i + env_len)
+        np.minimum(gain[i:end], shape[: end - i], out=gain[i:end])
+    return buf * gain
+
+
+print("sidechain:")
+bass = sidechain(bass, kick_times)
+lead = sidechain(lead, kick_times, depth=0.55)
+atmos = sidechain(atmos, kick_times, depth=0.60)
+drive = sidechain(drive, kick_times, depth=0.35)
 
 print("stems:")
 save("music_drums.wav", drums)

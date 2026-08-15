@@ -1,4 +1,4 @@
-extends Node
+﻿extends Node
 
 ## GDD 23: accessibility and UX options, plus the input map. Actions are
 ## registered in code rather than baked into project.godot so that remapping is
@@ -39,6 +39,11 @@ var shake_scale: float = 1.0
 var adjacency_hint_enabled: bool = true
 ## GDD 33: the count HUD stays minimal; this can turn it off entirely.
 var show_beat_pips: bool = true
+## GDD 11.2 is graded on how close the last step lands to the GO downbeat. Both
+## of these exist to make that rule visible instead of mysterious: the ring
+## teaches it continuously, the readout confirms it at the moment of the launch.
+var show_beat_ring: bool = true
+var show_timing_feedback: bool = true
 var music_volume: float = 0.9
 var sfx_volume: float = 1.0
 
@@ -96,6 +101,8 @@ func save() -> void:
 	cfg.set_value("accessibility", "shake_scale", shake_scale)
 	cfg.set_value("accessibility", "adjacency_hint", adjacency_hint_enabled)
 	cfg.set_value("accessibility", "beat_pips", show_beat_pips)
+	cfg.set_value("accessibility", "beat_ring", show_beat_ring)
+	cfg.set_value("accessibility", "timing_feedback", show_timing_feedback)
 	cfg.set_value("audio", "music", music_volume)
 	cfg.set_value("audio", "sfx", sfx_volume)
 	cfg.set_value("input", "binds", binds)
@@ -109,6 +116,8 @@ func _load() -> void:
 	shake_scale = cfg.get_value("accessibility", "shake_scale", shake_scale)
 	adjacency_hint_enabled = cfg.get_value("accessibility", "adjacency_hint", adjacency_hint_enabled)
 	show_beat_pips = cfg.get_value("accessibility", "beat_pips", show_beat_pips)
+	show_beat_ring = cfg.get_value("accessibility", "beat_ring", show_beat_ring)
+	show_timing_feedback = cfg.get_value("accessibility", "timing_feedback", show_timing_feedback)
 	music_volume = cfg.get_value("audio", "music", music_volume)
 	sfx_volume = cfg.get_value("audio", "sfx", sfx_volume)
 	var b: Variant = cfg.get_value("input", "binds", null)
@@ -116,3 +125,4 @@ func _load() -> void:
 		for a in DEFAULT_BINDS:
 			if (b as Dictionary).has(a):
 				binds[a] = (b as Dictionary)[a]
+

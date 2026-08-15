@@ -1,0 +1,64 @@
+{
+  "parts": {
+    "body_front": {
+      "w": 191,
+      "h": 309
+    },
+    "head_front": {
+      "w": 316,
+      "h": 292,
+      "seam_frac": 0.4774,
+      "full_h": 576,
+      "full_w": 316
+    },
+    "body_quarter": {
+      "w": 231,
+      "h": 306
+    },
+    "head_quarter": {
+      "w": 292,
+      "h": 296,
+      "seam_frac": 0.4852,
+      "full_h": 575,
+      "full_w": 292
+    },
+    "body_side": {
+      "w": 166,
+      "h": 310
+    },
+    "head_side": {
+      "w": 181,
+      "h": 290,
+      "seam_frac": 0.4773,
+      "full_h": 572,
+      "full_w": 181
+    },
+    "body_back": {
+      "w": 166,
+      "h": 325
+    },
+    "head_back": {
+      "w": 316,
+      "h": 261,
+      "seam_frac": 0.4329,
+      "full_h": 566,
+      "full_w": 316
+    },
+    "face_happy": {
+      "w": 269,
+      "h": 267
+    },
+    "face_surprised": {
+      "w": 288,
+      "h": 267
+    },
+    "face_determined": {
+      "w": 283,
+      "h": 264
+    },
+    "face_worried": {
+      "w": 281,
+      "h": 263
+    }
+  }
+}

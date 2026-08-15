@@ -81,11 +81,12 @@ static func toon(color: Color, opts: Dictionary = {}) -> ShaderMaterial:
 	m.set_shader_parameter("grade", opts.get("grade", 0.10))
 	if color.a < 1.0:
 		m.render_priority = 1
-	# The ink is a whole extra draw pass per object. On a phone the background
-	# layers give it up entirely - they are the cheapest thing to drop and the
-	# least missed, since GDD 15.3 wants them carrying the least line weight
-	# anyway.
-	var line: float = float(opts.get("outline", 2.6)) * Quality.ink_scale()
+	# World geometry carries no ink any more. Outlining every box read as noise
+	# rather than as line art - the silhouettes now come from flat colour blocks
+	# and the bevelled tile shader, and the only drawn outlines left in the game
+	# are the ones painted into the character's own sprites, which is exactly
+	# where a paper cut-out wants them.
+	var line: float = float(opts.get("outline", 0.0)) * Quality.ink_scale()
 	if Quality.is_mobile() and line < 2.4:
 		line = 0.0
 	if line > 0.0 and color.a >= 1.0:
@@ -106,7 +107,7 @@ static func set_albedo(m: Material, color: Color) -> void:
 ## `outline` is the ink width in pixels; background layers pass a thin line or
 ## none at all, so the canyon never competes with the deck (GDD 15.3).
 static func mat(color: Color, _rough: float = 1.0, metal: float = 0.0,
-		emission: float = 0.0, outline: float = 2.6) -> ShaderMaterial:
+		emission: float = 0.0, outline: float = 0.0) -> ShaderMaterial:
 	var key := "%s|%.2f|%.2f|%.2f" % [color.to_html(true), metal, emission, outline]
 	if _mats.has(key):
 		return _mats[key]
@@ -117,6 +118,37 @@ static func mat(color: Color, _rough: float = 1.0, metal: float = 0.0,
 	var m := toon(color, opts)
 	_mats[key] = m
 	return m
+
+
+const TILE_SHADER := preload("res://shaders/tile.gdshader")
+
+
+## The face of one Minesweeper cell. GDD 8.1: the bevel is what makes the board
+## recognisable, so it gets its own shader rather than being faked with geometry.
+static func tile_material(covered: bool, face: Color) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = TILE_SHADER
+	m.set_shader_parameter("face_color", face)
+	m.set_shader_parameter("covered", 1.0 if covered else 0.0)
+	if covered:
+		m.set_shader_parameter("bevel_light", face.lightened(0.42))
+		m.set_shader_parameter("bevel_dark", face.darkened(0.34))
+		m.set_shader_parameter("border_color", face.darkened(0.55))
+		m.set_shader_parameter("bevel_width", 0.13)
+	else:
+		m.set_shader_parameter("border_color", face.darkened(0.42))
+		m.set_shader_parameter("border_width", 0.022)
+	return m
+
+
+static func plane(size: Vector2) -> PlaneMesh:
+	var key := "plane%s" % size
+	if _meshes.has(key):
+		return _meshes[key]
+	var p := PlaneMesh.new()
+	p.size = size
+	_meshes[key] = p
+	return p
 
 
 static func box(size: Vector3) -> BoxMesh:

@@ -1,137 +1,213 @@
-﻿class_name CharacterAnimator
+class_name CharacterAnimator
 extends Node3D
 
-## GDD 14 - the fennec / kangaroo-rat mascot, built procedurally for greybox.
+## GDD 14 - the fennec, built the way Paper Mario builds a character: flat
+## painted cut-outs standing up in a 3D world.
 ##
-## GDD 14.2 [LOCK]: skeleton pose and secondary motion are separate systems.
-## The big poses (crouch, smear, rocket stretch, apex opening, comedy flail) are
-## authored here as target transforms; the ears and the red scarf are simulated
-## and only ever *follow*. That separation is what makes GDD 7.2's "physics
-## exact, animation exaggerated" possible - none of this touches the cell the
-## player is actually on.
+## The art comes straight off the concept sheet (tools/make_sprites.py cuts it).
+## Head and body are separate quads, which is the whole reason for the approach:
+##   * the head can lag, tilt and bob behind the body - GDD 14.2 [LOCK] wants
+##     secondary motion kept apart from the authored pose, and here it is
+##     literally a different object
+##   * the face can be swapped for one of the four expressions without anyone
+##     having to redraw the body
+##   * turning is a pinch, not a rotation: the sprite squashes to nothing on the
+##     turn and springs back holding the other view, which is exactly the trick
+##     Paper Mario uses and it costs one scale channel
+##
+## The camera never yaws (CameraDirector [LOCK]), so the quads simply face +Z and
+## are always square to the viewer - no billboarding needed at all.
 
 enum State { IDLE, DASH, ARMED, LAUNCH, APEX, FALL, LAND, GLIDE, CHEER }
 
-## GDD 14.1: mascot proportions, sized against a 2 m tile so the silhouette is
-## readable from the 45-degree reading camera without competing with the numbers.
-const RIG_SCALE := 1.30
-const SCARF_SEGMENTS := 8
-const SCARF_LEN := 0.16 * RIG_SCALE
-const NECK_HEIGHT := 0.80 * RIG_SCALE
+const SPRITES := "res://assets/sprites/"
+## Height of the whole animal, in metres, against a 2 m tile.
+const FIGURE_HEIGHT := 1.62
+const SCARF_SEGMENTS := 9
+const SCARF_LEN := 0.155
+
+## pose -> which body/head art to stand up
+const POSE_FRONT := "front"
+const POSE_QUARTER := "quarter"
+const POSE_SIDE := "side"
+const POSE_BACK := "back"
 
 var state: State = State.IDLE
 var grade: LaunchController.Grade = LaunchController.Grade.PERFECT
 
-var _body_root: Node3D          ## squash / stretch / lean lives here
-var _torso: MeshInstance3D
+var _root: Node3D                 ## squash / stretch / lean
+var _body: MeshInstance3D
 var _head: Node3D
-var _ears: Array[Node3D] = []
-var _legs: Array[Node3D] = []
-var _tail: Node3D
-var _scarf_nodes: Array[MeshInstance3D] = []
+var _head_quad: MeshInstance3D
+var _shadow: MeshInstance3D
+var _scarf: Array[MeshInstance3D] = []
 var _scarf_p: PackedVector3Array = PackedVector3Array()
 var _scarf_prev: PackedVector3Array = PackedVector3Array()
 
+var _tex: Dictionary = {}         ## name -> Texture2D
+var _meta: Dictionary = {}        ## from sprites.json
+var _px: float = 0.003            ## metres per source pixel
+
+var _pose := POSE_FRONT
+var _face := ""
+var _facing := 1.0                ## +1 art faces its drawn way, -1 mirrored
+var _pinch := 1.0                 ## paper-turn: horizontal squash, 1 = flat on
+var _want_facing := 1.0
+var _want_pose := POSE_FRONT
+
 var _prev_global := Vector3.ZERO
 var _velocity := Vector3.ZERO
-var _ear_lag := Vector2.ZERO
 var _dash_dir := Vector3.ZERO
 var _dash_t := 99.0
 var _land_t := 99.0
 var _time := 0.0
+var _head_lag := Vector2.ZERO
 var _scarf_ready := false
 
 
 func _ready() -> void:
-	scale = Vector3.ONE * RIG_SCALE
-	_build_rig()
+	_load_art()
+	_build()
 	_prev_global = global_position
 	for i in SCARF_SEGMENTS:
 		_scarf_p.append(global_position)
 		_scarf_prev.append(global_position)
 
 
-# ---------------------------------------------------------------------------
-# rig
-# ---------------------------------------------------------------------------
+func _load_art() -> void:
+	var f := FileAccess.open(SPRITES + "sprites.json", FileAccess.READ)
+	if f:
+		var parsed: Variant = JSON.parse_string(f.get_as_text())
+		f.close()
+		if parsed is Dictionary:
+			_meta = (parsed as Dictionary).get("parts", {})
+	for n in ["body_front", "body_quarter", "body_side", "body_back",
+			"head_front", "head_quarter", "head_side", "head_back",
+			"face_happy", "face_surprised", "face_determined", "face_worried"]:
+		var path: String = SPRITES + str(n) + ".png"
+		if ResourceLoader.exists(path):
+			_tex[n] = load(path)
 
-func _build_rig() -> void:
-	_body_root = Node3D.new()
-	_body_root.name = "Body"
-	add_child(_body_root)
+	var front: Dictionary = _meta.get("head_front", {})
+	var full_h: float = float(front.get("full_h", 560))
+	_px = FIGURE_HEIGHT / maxf(1.0, full_h)
 
-	var fur := Greybox.mat(Greybox.C_FUR, 0.85)
-	var fur_dark := Greybox.mat(Greybox.C_FUR_DARK, 0.85)
-	var belly := Greybox.mat(Greybox.C_BELLY, 0.8)
-	var dark := Greybox.mat(Color(0.10, 0.09, 0.09), 0.5)
-	var scarf := Greybox.mat(Greybox.C_SCARF, 0.7)
 
-	# GDD 14.1: kangaroo-rat body - low, compressed, ready to explode upward.
-	_torso = Greybox.mi(Greybox.capsule(0.27, 0.78), fur, Vector3(0, 0.52, 0))
-	_torso.rotation_degrees = Vector3(90, 0, 0)
-	_body_root.add_child(_torso)
-	_body_root.add_child(Greybox.mi(Greybox.capsule(0.20, 0.52), belly, Vector3(0, 0.44, -0.13)))
+## Paper: alpha-scissored so the cut edge stays crisp and never argues with the
+## transparency sort, and unshaded so the painted art arrives exactly as drawn.
+func _sprite_material(tex: Texture2D) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = tex
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	m.alpha_scissor_threshold = 0.5
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	m.render_priority = 2
+	return m
 
-	# Head
+
+func _quad(tex: Texture2D) -> MeshInstance3D:
+	var q := QuadMesh.new()
+	q.size = Vector2(1, 1)
+	var mi := MeshInstance3D.new()
+	mi.mesh = q
+	mi.material_override = _sprite_material(tex)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
+
+func _build() -> void:
+	_root = Node3D.new()
+	_root.name = "Paper"
+	add_child(_root)
+
+	# A painted contact shadow. An unshaded cut-out casts nothing useful, and
+	# without this the character floats off the deck.
+	var sm := StandardMaterial3D.new()
+	sm.albedo_color = Color(0.24, 0.16, 0.22, 0.34)
+	sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	sm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_shadow = MeshInstance3D.new()
+	var disc := CylinderMesh.new()
+	disc.top_radius = 0.42
+	disc.bottom_radius = 0.42
+	disc.height = 0.02
+	disc.radial_segments = 16
+	_shadow.mesh = disc
+	_shadow.material_override = sm
+	_shadow.position = Vector3(0, 0.02, 0)
+	add_child(_shadow)
+
+	_body = _quad(_tex.get("body_front"))
+	_root.add_child(_body)
+
 	_head = Node3D.new()
-	_head.position = Vector3(0, 0.94, -0.08)
-	_body_root.add_child(_head)
-	_head.add_child(Greybox.mi(Greybox.sphere(0.25, 14), fur))
-	_head.add_child(Greybox.mi(Greybox.capsule(0.12, 0.26), belly, Vector3(0, -0.05, -0.20)))
-	_head.add_child(Greybox.mi(Greybox.sphere(0.045, 8), dark, Vector3(0, -0.02, -0.33)))
-	for sx in [-1.0, 1.0]:
-		_head.add_child(Greybox.mi(Greybox.sphere(0.055, 8), dark,
-				Vector3(sx * 0.13, 0.05, -0.21)))
+	_root.add_child(_head)
+	_head_quad = _quad(_tex.get("head_front"))
+	_head.add_child(_head_quad)
 
-	# GDD 14.1: fennec ears. Oversized, and the loudest secondary-motion channel.
-	for sx in [-1.0, 1.0]:
-		var pivot := Node3D.new()
-		pivot.position = Vector3(sx * 0.14, 0.18, 0.02)
-		_head.add_child(pivot)
-		var ear := Greybox.mi(Greybox.box(Vector3(0.10, 0.60, 0.30)), fur,
-				Vector3(0, 0.30, 0))
-		pivot.add_child(ear)
-		pivot.add_child(Greybox.mi(Greybox.box(Vector3(0.06, 0.42, 0.20)), belly,
-				Vector3(0, 0.26, -0.06)))
-		pivot.add_child(Greybox.mi(Greybox.box(Vector3(0.11, 0.10, 0.31)), fur_dark,
-				Vector3(0, 0.58, 0)))
-		pivot.rotation_degrees = Vector3(-8, 0, sx * 12)
-		_ears.append(pivot)
-
-	# Hind legs
-	for sx in [-1.0, 1.0]:
-		var leg := Node3D.new()
-		leg.position = Vector3(sx * 0.20, 0.30, 0.08)
-		_body_root.add_child(leg)
-		leg.add_child(Greybox.mi(Greybox.capsule(0.11, 0.34), fur, Vector3(0, -0.06, 0.02)))
-		leg.add_child(Greybox.mi(Greybox.box(Vector3(0.15, 0.09, 0.42)), fur_dark,
-				Vector3(0, -0.25, -0.10)))
-		_legs.append(leg)
-
-	# Forepaws
-	for sx in [-1.0, 1.0]:
-		_body_root.add_child(Greybox.mi(Greybox.capsule(0.06, 0.22), fur,
-				Vector3(sx * 0.20, 0.60, -0.14)))
-
-	# Tail
-	_tail = Node3D.new()
-	_tail.position = Vector3(0, 0.44, 0.22)
-	_body_root.add_child(_tail)
-	for i in 3:
-		_tail.add_child(Greybox.mi(Greybox.capsule(0.075 - i * 0.012, 0.26),
-				fur if i < 2 else belly, Vector3(0, -0.04 * i, 0.16 + 0.22 * i)))
-	_tail.rotation_degrees = Vector3(-26, 0, 0)
-
-	# GDD 14.1 / 10.2: the red scarf. Colour identity, speed line, and the thing
-	# that saves the player when they miss the mine. Simulated in world space so
-	# it never inherits the body's squash.
+	var scarf_mat := StandardMaterial3D.new()
+	scarf_mat.albedo_color = Greybox.C_SCARF
+	scarf_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	scarf_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	scarf_mat.render_priority = 1
 	for i in SCARF_SEGMENTS:
-		var w := lerpf(0.30, 0.16, float(i) / float(SCARF_SEGMENTS)) * RIG_SCALE
-		var seg := Greybox.mi(Greybox.box(Vector3(w, 0.07 * RIG_SCALE, SCARF_LEN)), scarf)
+		var w := lerpf(0.30, 0.13, float(i) / float(SCARF_SEGMENTS))
+		var seg := MeshInstance3D.new()
+		var b := BoxMesh.new()
+		b.size = Vector3(w, 0.055, SCARF_LEN)
+		seg.mesh = b
+		seg.material_override = scarf_mat
 		seg.top_level = true
+		seg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(seg)
-		_scarf_nodes.append(seg)
-	_body_root.add_child(Greybox.mi(Greybox.capsule(0.20, 0.10), scarf, Vector3(0, 0.80, -0.02)))
+		_scarf.append(seg)
+
+	_apply_art(POSE_FRONT, "")
+
+
+## Stand the two quads up at the right size and stack them at the seam recorded
+## when the sheet was cut, so head and body meet exactly where the scarf is.
+func _apply_art(pose: String, face: String) -> void:
+	_pose = pose
+	_face = face
+
+	var body_name := "body_" + pose
+	var head_name := "face_" + face if face != "" and _tex.has("face_" + face) else "head_" + pose
+	if not _tex.has(body_name):
+		return
+
+	var bm: Dictionary = _meta.get(body_name, {})
+	var hm_pose: Dictionary = _meta.get("head_" + pose, {})
+	var hm: Dictionary = _meta.get(head_name, hm_pose)
+
+	var bw := float(bm.get("w", 200)) * _px
+	var bh := float(bm.get("h", 300)) * _px
+	var full_h := float(hm_pose.get("full_h", 560))
+	var pose_head_h := float(hm_pose.get("h", 280))
+
+	# An expression head is drawn at its own size; match it to the pose head by
+	# width so the ears stay the same scale no matter which face is showing.
+	var hw_px := float(hm.get("w", 300))
+	var hh_px := float(hm.get("h", 280))
+	var head_scale := float(hm_pose.get("w", 300)) / maxf(1.0, hw_px)
+	var hw := hw_px * head_scale * _px
+	var hh := hh_px * head_scale * _px
+
+	(_body.mesh as QuadMesh).size = Vector2(bw, bh)
+	_body.material_override = _sprite_material(_tex[body_name])
+	_body.position = Vector3(0, bh * 0.5, 0)
+
+	(_head_quad.mesh as QuadMesh).size = Vector2(hw, hh)
+	_head_quad.material_override = _sprite_material(_tex.get(head_name, _tex[body_name]))
+	_head_quad.position = Vector3(0, hh * 0.5, 0)
+	# The pose head's base sits this far up the full figure; the expression head
+	# hangs from the same line.
+	_head.position = Vector3(0, (full_h - pose_head_h) * _px, 0.01)
+
+	_shadow.scale = Vector3(bw * 1.15, 1.0, bw * 0.85)
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +224,8 @@ func set_state(s: State, g: LaunchController.Grade = LaunchController.Grade.PERF
 func notify_dash(dir: Vector2i) -> void:
 	_dash_dir = Vector3(float(dir.x), 0.0, -float(dir.y))
 	_dash_t = 0.0
+	if dir.x != 0:
+		_want_facing = 1.0 if dir.x > 0 else -1.0
 
 
 func _process(delta: float) -> void:
@@ -160,163 +238,161 @@ func _process(delta: float) -> void:
 		_velocity = _velocity.lerp((g - _prev_global) / delta, 0.35)
 	_prev_global = g
 
-	# The dash pose is a one-shot smear that settles back into idle on its own,
-	# so nothing outside has to remember to clear it.
-	if state == State.DASH and _dash_t > 0.42:
+	if state == State.DASH and _dash_t > 0.34:
 		state = State.IDLE
 
+	_choose_art()
 	_update_pose(delta)
-	_update_ears(delta)
+	_update_head(delta)
 	_update_scarf(delta)
 
 
-## GDD 7.2 / 11.2: the authored poses. None of these change where the character
-## is - only how the moment reads.
+## GDD 14: which cut-out is standing up right now.
+func _choose_art() -> void:
+	var pose := POSE_FRONT
+	var face := ""
+	match state:
+		State.IDLE:
+			pose = POSE_FRONT
+		State.DASH:
+			if absf(_dash_dir.x) > 0.5:
+				pose = POSE_SIDE
+			elif _dash_dir.z < 0.0:
+				pose = POSE_BACK       # running away from the camera
+			else:
+				pose = POSE_FRONT
+		State.ARMED:
+			pose = POSE_FRONT
+			face = "surprised"
+		State.LAUNCH:
+			pose = POSE_QUARTER
+			face = "determined"
+		State.APEX:
+			pose = POSE_FRONT
+			face = "happy" if grade == LaunchController.Grade.PERFECT else "surprised"
+		State.FALL:
+			pose = POSE_QUARTER
+			face = "surprised"
+		State.LAND:
+			pose = POSE_FRONT
+			face = "happy" if grade != LaunchController.Grade.BAD else "worried"
+		State.GLIDE:
+			pose = POSE_SIDE
+			face = "worried"
+		State.CHEER:
+			pose = POSE_FRONT
+			face = "happy"
+
+	_want_pose = pose
+	if pose != _pose or face != _face:
+		# Swap at the pinch, so the change is hidden inside the paper turn.
+		if _pinch < 0.45 or _pose == POSE_FRONT or pose == _pose:
+			_apply_art(pose, face)
+		elif _pose != pose:
+			_pinch = minf(_pinch, 0.35)
+
+
 func _update_pose(delta: float) -> void:
 	var target_scale := Vector3.ONE
 	var target_rot := Vector3.ZERO
-	var head_rot := Vector3.ZERO
-	var tail_rot := Vector3(-26, 0, 0)
-	var lerp_rate := 14.0
+	var rate := 14.0
 
 	match state:
 		State.IDLE:
-			var bob := sin(_time * 3.1) * 0.02
-			target_scale = Vector3(1.0 - bob, 1.0 + bob, 1.0 - bob)
-			head_rot = Vector3(sin(_time * 0.7) * 5.0, sin(_time * 0.43) * 16.0, 0)
-
+			var bob := sin(_time * 3.4) * 0.03
+			target_scale = Vector3(1.0 - bob, 1.0 + bob, 1.0)
 		State.DASH:
-			# Anticipation -> smear -> arrival, compressed into the dash window.
 			var u := clampf(_dash_t / Tuning.DASH_TIME, 0.0, 1.4)
-			var smear := maxf(0.0, 1.0 - u) * 1.0
-			var stretch := 1.0 + 0.78 * smear
-			var squash := 1.0 - 0.40 * smear
-			if absf(_dash_dir.x) > 0.5:
-				target_scale = Vector3(stretch, squash, squash)
-				target_rot = Vector3(0, 0, -_dash_dir.x * 34.0 * smear)
-			else:
-				target_scale = Vector3(squash, squash, stretch)
-				target_rot = Vector3(-28.0 * smear, 0, 0)
-			target_rot.y = rad_to_deg(atan2(_dash_dir.x, _dash_dir.z)) * 0.25
-			lerp_rate = 26.0
-
+			var smear := maxf(0.0, 1.0 - u)
+			target_scale = Vector3(1.0 + 0.30 * smear, 1.0 - 0.22 * smear, 1.0)
+			target_rot = Vector3(0, 0, -_dash_dir.x * 16.0 * smear)
+			rate = 26.0
 		State.ARMED:
-			# Standing on a live charge. GDD 12.2: a held breath, ears up.
-			var tremble := sin(_time * 22.0) * 0.012
-			target_scale = Vector3(1.0 + tremble, 1.0 - tremble * 1.6, 1.0 + tremble)
-			target_rot = Vector3(-6, 0, sin(_time * 17.0) * 2.5)
-			head_rot = Vector3(14, sin(_time * 9.0) * 8.0, 0)
-
+			var tr := sin(_time * 24.0) * 0.02
+			target_scale = Vector3(1.0 + tr, 1.0 - tr * 1.5, 1.0)
+			target_rot = Vector3(0, 0, sin(_time * 19.0) * 3.0)
 		State.LAUNCH:
 			match grade:
 				LaunchController.Grade.PERFECT:
-					target_scale = Vector3(0.58, 1.92, 0.58)
-					target_rot = Vector3(-34, 0, 0)
+					target_scale = Vector3(0.72, 1.55, 1.0)
 				LaunchController.Grade.GOOD:
-					target_scale = Vector3(0.70, 1.62, 0.70)
-					target_rot = Vector3(-26, 22, 16)
+					target_scale = Vector3(0.84, 1.34, 1.0)
+					target_rot = Vector3(0, 0, 12)
 				_:
-					target_scale = Vector3(1.20, 1.14, 1.20)
-					target_rot = Vector3(-10, 70, 48)
-			head_rot = Vector3(-16, 0, 0)
-			tail_rot = Vector3(-64, 0, 0)
-
+					target_scale = Vector3(1.10, 1.06, 1.0)
+					target_rot = Vector3(0, 0, 34)
 		State.APEX:
-			# GDD 11.1: the pose opens, the scarf opens, the player breathes.
-			match grade:
-				LaunchController.Grade.PERFECT:
-					target_scale = Vector3(1.22, 0.86, 1.22)
-					target_rot = Vector3(16, 0, 0)
-				LaunchController.Grade.GOOD:
-					target_scale = Vector3(1.06, 0.96, 1.06)
-					target_rot = Vector3(10, -22, -14)
-				_:
-					target_scale = Vector3(1.32, 0.80, 1.32)
-					target_rot = Vector3(6, 150.0 * sin(_time * 3.0), 40)
-			head_rot = Vector3(-8, 0, 0)
-			tail_rot = Vector3(-10, 0, 0)
-			lerp_rate = 8.0
-
+			target_scale = Vector3(1.12, 0.92, 1.0)
+			target_rot = Vector3(0, 0, 0.0 if grade == LaunchController.Grade.PERFECT
+					else sin(_time * 3.0) * 26.0)
+			rate = 8.0
 		State.FALL:
-			match grade:
-				LaunchController.Grade.PERFECT:
-					target_scale = Vector3(0.74, 1.46, 0.74)
-					target_rot = Vector3(34, 0, 0)
-				LaunchController.Grade.GOOD:
-					target_scale = Vector3(0.92, 1.14, 0.92)
-					target_rot = Vector3(28, 18, -12)
-				_:
-					target_scale = Vector3(1.0, 1.0, 1.0)
-					target_rot = Vector3(20, 300.0 * sin(_time * 2.2), -55)
-			head_rot = Vector3(12, 0, 0)
-
+			target_scale = Vector3(0.86, 1.22, 1.0)
+			target_rot = Vector3(0, 0, 0.0 if grade == LaunchController.Grade.PERFECT
+					else -22.0)
 		State.LAND:
-			var lu := clampf(_land_t / 0.26, 0.0, 1.0)
+			var lu := clampf(_land_t / 0.24, 0.0, 1.0)
 			var punch := (1.0 - lu) * (1.0 - lu)
-			match grade:
-				LaunchController.Grade.BAD:
-					target_scale = Vector3(1.0 + punch * 0.85, 1.0 - punch * 0.60, 1.0 + punch * 0.55)
-					target_rot = Vector3(-40.0 * punch, 0, 55.0 * punch)
-				_:
-					target_scale = Vector3(1.0 + punch * 0.60, 1.0 - punch * 0.48, 1.0 + punch * 0.38)
-					target_rot = Vector3(6.0 * punch, 0, 0)
-			lerp_rate = 20.0
-
+			if grade == LaunchController.Grade.BAD:
+				target_scale = Vector3(1.0 + punch * 0.55, 1.0 - punch * 0.48, 1.0)
+				target_rot = Vector3(0, 0, 46.0 * punch)
+			else:
+				target_scale = Vector3(1.0 + punch * 0.38, 1.0 - punch * 0.36, 1.0)
+			rate = 20.0
 		State.GLIDE:
-			# GDD 10.2: low, unstable, comical - but still moving forward.
-			target_scale = Vector3(1.26, 0.78, 1.16)
-			target_rot = Vector3(-12 + sin(_time * 5.3) * 9.0, sin(_time * 3.7) * 24.0,
-					sin(_time * 4.4) * 26.0)
-			head_rot = Vector3(-20, 0, 0)
-			tail_rot = Vector3(-70, 0, 0)
-			lerp_rate = 7.0
-
+			target_scale = Vector3(1.10, 0.92, 1.0)
+			target_rot = Vector3(0, 0, sin(_time * 4.6) * 20.0)
+			rate = 7.0
 		State.CHEER:
-			var hop := absf(sin(_time * 4.0))
-			target_scale = Vector3(1.0 - hop * 0.1, 1.0 + hop * 0.16, 1.0 - hop * 0.1)
-			target_rot = Vector3(-8, sin(_time * 1.6) * 30.0, 0)
-			head_rot = Vector3(-18, 0, 0)
+			var hop := absf(sin(_time * 4.4))
+			target_scale = Vector3(1.0 - hop * 0.10, 1.0 + hop * 0.18, 1.0)
 
-	_body_root.scale = _body_root.scale.lerp(target_scale, clampf(lerp_rate * delta, 0, 1))
-	_body_root.rotation_degrees = _body_root.rotation_degrees.lerp(
-			target_rot, clampf(lerp_rate * delta, 0, 1))
-	_head.rotation_degrees = _head.rotation_degrees.lerp(head_rot, clampf(9.0 * delta, 0, 1))
-	_tail.rotation_degrees = _tail.rotation_degrees.lerp(tail_rot, clampf(8.0 * delta, 0, 1))
+	# The paper turn: pinch flat, swap, spring back.
+	var pinch_target := 1.0 if _facing == _want_facing else 0.0
+	_pinch = move_toward(_pinch, pinch_target, delta * 9.0)
+	if _pinch <= 0.02 and _facing != _want_facing:
+		_facing = _want_facing
+		_apply_art(_want_pose, _face)
+	if _facing == _want_facing:
+		_pinch = move_toward(_pinch, 1.0, delta * 9.0)
 
-	# Hind legs tuck in the air, extend for the landing.
-	var tuck := 0.0
-	match state:
-		State.LAUNCH: tuck = 1.0
-		State.APEX: tuck = 0.55
-		State.FALL: tuck = 0.15
-		State.GLIDE: tuck = 0.7
-	for i in _legs.size():
-		var leg := _legs[i]
-		leg.rotation_degrees = leg.rotation_degrees.lerp(
-				Vector3(78.0 * tuck, 0, 0), clampf(10.0 * delta, 0, 1))
+	var k := clampf(rate * delta, 0.0, 1.0)
+	_root.scale = _root.scale.lerp(
+			Vector3(target_scale.x * maxf(0.02, _pinch) * _facing, target_scale.y, 1.0), k)
+	_root.rotation_degrees = _root.rotation_degrees.lerp(target_rot, k)
+
+	# The contact shadow stays on the deck and shrinks as the character rises.
+	var lift: float = maxf(0.0, global_position.y - origin_y())
+	_shadow.visible = lift < 6.0
+	var f := clampf(1.0 - lift / 6.0, 0.0, 1.0)
+	_shadow.global_position = Vector3(global_position.x, origin_y() + 0.03, global_position.z)
+	_shadow.scale = Vector3(0.5 + 0.5 * f, 1.0, 0.4 + 0.4 * f)
 
 
-## GDD 7.2 step 3 / 14.2: ears lie back against acceleration. Pure follow-through,
-## never authored per state.
-func _update_ears(delta: float) -> void:
-	var local_v := _velocity
-	var lag := Vector2(clampf(-local_v.x * 3.4, -55, 55), clampf(local_v.z * 3.0, -70, 70))
+func origin_y() -> float:
+	var p := get_parent()
+	if p is PlayerMotor:
+		return (p as PlayerMotor).origin.y
+	return 0.0
+
+
+## GDD 14.2 [LOCK]: the head is a separate part and it only ever follows.
+func _update_head(delta: float) -> void:
+	var lag := Vector2(clampf(-_velocity.x * 1.6, -22, 22), clampf(_velocity.y * 0.8, -16, 16))
 	if state == State.APEX:
-		lag *= 0.35
-	_ear_lag = _ear_lag.lerp(lag, clampf(8.0 * delta, 0, 1))
-	for i in _ears.size():
-		var sx := -1.0 if i == 0 else 1.0
-		var wob := sin(_time * 6.0 + float(i) * 2.1) * 3.0
-		_ears[i].rotation_degrees = Vector3(
-			-8.0 + _ear_lag.y + wob,
-			0.0,
-			sx * 12.0 + _ear_lag.x * 0.5 + wob * sx * 0.4)
+		lag *= 0.4
+	_head_lag = _head_lag.lerp(lag, clampf(9.0 * delta, 0, 1))
+	var wob := sin(_time * 5.2) * 1.6
+	_head.rotation_degrees = Vector3(0, 0, _head_lag.x + wob)
+	_head.position.y = lerpf(_head.position.y, _head.position.y, 1.0)
 
 
-## GDD 14.2 [LOCK]: the scarf tip is procedural. A verlet ribbon anchored at the
-## neck, pushed by the character's own motion.
 func _update_scarf(delta: float) -> void:
-	var anchor := global_position + Vector3(0, NECK_HEIGHT, 0)
+	if _scarf.is_empty():
+		return
+	# Behind the paper, never in front of it. The character is a flat cut-out and
+	# a ribbon drifting toward the camera simply erases the body.
+	var anchor := global_position + Vector3(0, FIGURE_HEIGHT * 0.52, -0.06)
 	if not _scarf_ready:
 		for i in SCARF_SEGMENTS:
 			_scarf_p[i] = anchor
@@ -327,9 +403,9 @@ func _update_scarf(delta: float) -> void:
 	var open := 1.0 if state == State.GLIDE else 0.0
 	var drag := 0.90 - 0.16 * open
 	var gravity := Vector3(0, -9.0 + 7.0 * open, 0)
-	# A standing breeze down the canyon, so the scarf reads as a trailing ribbon
-	# instead of hanging like a rope even when the character is still.
-	var breeze := Vector3(0.9 * sin(_time * 1.7), 0.6, 5.0 + 3.0 * open)
+	# Mostly sideways, so the ribbon reads as a silhouette beside the character
+	# rather than as a bar pointing at the viewer.
+	var breeze := Vector3(2.6 * sin(_time * 1.9) + 1.2, 0.7, -1.2 - 0.6 * open)
 	var push := -_velocity * (0.9 + 0.8 * open) + breeze
 
 	for i in SCARF_SEGMENTS:
@@ -338,34 +414,30 @@ func _update_scarf(delta: float) -> void:
 		_scarf_prev[i] = cur
 		_scarf_p[i] = cur + vel + (gravity + push) * dt * dt * 30.0
 
-	# On the deck the ribbon must not sink through the stone.
 	var grounded := state in [State.IDLE, State.DASH, State.ARMED, State.LAND, State.CHEER]
-	var floor_y := global_position.y + 0.10
-
-	# Two constraint passes keep the ribbon from stretching.
+	var floor_y := origin_y() + 0.10
 	for _pass in 2:
 		_scarf_p[0] = anchor
 		for i in range(1, SCARF_SEGMENTS):
 			var a := _scarf_p[i - 1]
-			var b := _scarf_p[i]
-			var d := b - a
+			var d := _scarf_p[i] - a
 			var l := d.length()
 			if l > 1e-5:
 				_scarf_p[i] = a + d / l * SCARF_LEN
 			if grounded and _scarf_p[i].y < floor_y:
 				_scarf_p[i].y = floor_y
+			# Hard rule: stay behind the paper.
+			_scarf_p[i].z = minf(_scarf_p[i].z, global_position.z - 0.05)
 
 	for i in range(1, SCARF_SEGMENTS):
-		var a := _scarf_p[i - 1]
-		var b := _scarf_p[i]
-		var seg := _scarf_nodes[i]
-		var mid := (a + b) * 0.5
-		var dir := b - a
+		var a2 := _scarf_p[i - 1]
+		var b2 := _scarf_p[i]
+		var mid := (a2 + b2) * 0.5
+		var dir := b2 - a2
 		if dir.length() < 1e-4:
 			dir = Vector3(0, 0, 1)
 		dir = dir.normalized()
 		var up := Vector3.UP if absf(dir.dot(Vector3.UP)) < 0.98 else Vector3.FORWARD
-		seg.global_position = mid
-		seg.look_at(mid + dir, up, true)
-	_scarf_nodes[0].visible = false
-
+		_scarf[i].global_position = mid
+		_scarf[i].look_at(mid + dir, up, true)
+	_scarf[0].visible = false

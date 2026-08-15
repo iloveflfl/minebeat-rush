@@ -19,6 +19,9 @@ var _pips: Array[ColorRect] = []
 var _pip_root: Control
 var _joystick: Control
 var _joy_parts: Array[Control] = []
+var _grade_root: Control
+var _grade_label: Label
+var _grade_marker: ColorRect
 var _debug: Label
 var _results: Control
 var _pause: Control
@@ -34,6 +37,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_build_pips()
 	_build_joystick()
+	_build_grade()
 	_build_debug()
 	_build_results()
 	_build_pause()
@@ -132,6 +136,63 @@ func hide_joystick() -> void:
 # ---------------------------------------------------------------------------
 # debug overlay (F3) - never part of the shipped reading surface
 # ---------------------------------------------------------------------------
+
+## GDD 11.2 grades the launch on how close the last step landed to the GO
+## downbeat. The word alone never explained that, so it comes with the evidence:
+## a short scale whose right-hand end is the GO, and a marker showing where the
+## step actually fell. Two launches in and the rule reads itself.
+##
+## It is a teaching aid, not a score display (GDD 22.1) - it fades fast, it sits
+## out of the reading area, and it turns itself off once the player is past the
+## opening Acts.
+func _build_grade() -> void:
+	_grade_root = Control.new()
+	_grade_root.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_grade_root.position = Vector2(0, -118)
+	_grade_root.modulate.a = 0.0
+	add_child(_grade_root)
+
+	_grade_label = Label.new()
+	_grade_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_grade_label.size = Vector2(260, 34)
+	_grade_label.position = Vector2(-130, -34)
+	_style_label(_grade_label, 28, Color(1, 1, 1))
+	_grade_root.add_child(_grade_label)
+
+	var track := ColorRect.new()
+	track.color = Color(0, 0, 0, 0.42)
+	track.size = Vector2(180, 7)
+	track.position = Vector2(-90, 6)
+	_grade_root.add_child(track)
+
+	# The GO line: the right-hand end of the scale.
+	var go := ColorRect.new()
+	go.color = Color(1, 0.93, 0.62, 0.95)
+	go.size = Vector2(3, 17)
+	go.position = Vector2(89, 1)
+	_grade_root.add_child(go)
+
+	_grade_marker = ColorRect.new()
+	_grade_marker.size = Vector2(7, 15)
+	_grade_marker.position = Vector2(-3, 2)
+	_grade_root.add_child(_grade_marker)
+
+
+## `early` is how many seconds before the GO the step landed; `window` is the
+## widest timing that still counts as anything.
+func show_grade(text: String, color: Color, early: float, window: float) -> void:
+	if not GameSettings.show_timing_feedback:
+		return
+	_grade_label.text = text
+	_grade_label.add_theme_color_override("font_color", color)
+	_grade_marker.color = color
+	var t := clampf(early / maxf(0.001, window), 0.0, 1.0)
+	_grade_marker.position.x = lerpf(86.0, -90.0, t)
+	_grade_root.modulate.a = 1.0
+	var tw := create_tween()
+	tw.tween_interval(0.65)
+	tw.tween_property(_grade_root, "modulate:a", 0.0, 0.45)
+
 
 func _build_debug() -> void:
 	_debug = Label.new()

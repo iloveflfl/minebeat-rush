@@ -105,13 +105,13 @@ func _build_canyon() -> void:
 	var span := absf(far_z) + 460.0
 	# Thin ink on the mid band, none at all on the far band and the canyon floor.
 	# GDD 15.3: the background must never carry as much line weight as the deck.
-	var near_rock := Greybox.mat(Greybox.C_ROCK_NEAR, 1.0, 0.0, 0.0, 1.6)
-	var mid_rock := Greybox.mat(Greybox.C_ROCK_MID, 1.0, 0.0, 0.0, 1.2)
-	var far_rock := Greybox.mat(Greybox.C_ROCK_FAR, 1.0, 0.0, 0.0, 0.0)
-	var floor_mat := Greybox.mat(Color(0.86, 0.78, 0.58), 1.0, 0.0, 0.0, 0.0)
-	var water := Greybox.mat(Greybox.C_WATER, 1.0, 0.0, 0.22, 0.0)
-	var leaf := Greybox.mat(Greybox.C_LEAF, 1.0, 0.0, 0.0, 1.6)
-	var leaf_dark := Greybox.mat(Greybox.C_LEAF_DARK, 1.0, 0.0, 0.0, 1.6)
+	var near_rock := Greybox.mat(Greybox.C_ROCK_NEAR)
+	var mid_rock := Greybox.mat(Greybox.C_ROCK_MID)
+	var far_rock := Greybox.mat(Greybox.C_ROCK_FAR)
+	var floor_mat := Greybox.mat(Color(0.86, 0.78, 0.58))
+	var water := Greybox.mat(Greybox.C_WATER, 1.0, 0.0, 0.22)
+	var leaf := Greybox.mat(Greybox.C_LEAF)
+	var leaf_dark := Greybox.mat(Greybox.C_LEAF_DARK)
 
 	# Canyon floor with a river running the whole length of it.
 	_world.add_child(Greybox.mi(Greybox.box(Vector3(560.0, 8.0, span)),
@@ -163,8 +163,8 @@ func _build_canyon() -> void:
 ## few large simple shapes rather than a lot of small detail, and these are what
 ## stop the space between the deck and the far wall from being empty air.
 func _build_distant_arches(far_z: float, rng: RandomNumberGenerator) -> void:
-	var stone := Greybox.mat(Greybox.C_ROCK_MID.lerp(Greybox.C_PIER, 0.4), 1.0, 0.0, 0.0, 1.2)
-	var pale := Greybox.mat(Greybox.C_ROCK_FAR.lerp(Greybox.C_ROCK_MID, 0.3), 1.0, 0.0, 0.0, 0.0)
+	var stone := Greybox.mat(Greybox.C_ROCK_MID.lerp(Greybox.C_PIER, 0.4))
+	var pale := Greybox.mat(Greybox.C_ROCK_FAR.lerp(Greybox.C_ROCK_MID, 0.3))
 	var z := -260.0
 	var idx := 0
 	while z > far_z + 120.0:
@@ -311,7 +311,7 @@ func _build_sun_gate() -> void:
 
 	var stone := Greybox.mat(Color(0.78, 0.66, 0.46), 0.85)
 	var dark := Greybox.mat(Color(0.46, 0.36, 0.26), 0.9)
-	var gold := Greybox.mat(Color(1.0, 0.84, 0.36), 0.25, 0.0, 0.45, 2.2)
+	var gold := Greybox.mat(Color(1.0, 0.84, 0.36), 0.25, 0.0, 0.45)
 
 	# Landing platform - 5 tiles wide so the final launch has somewhere to land.
 	_gate.add_child(Greybox.mi(Greybox.box(Vector3(14.0, 1.2, 22.0)), stone,
@@ -365,6 +365,8 @@ func collapse_everything_behind(from_index: int) -> void:
 			s.collapse()
 	if intro_sector != null and is_instance_valid(intro_sector):
 		intro_sector.collapse()
+
+
 
 
 

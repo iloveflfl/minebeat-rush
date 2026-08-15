@@ -126,8 +126,8 @@ func _push_palette(f: float) -> void:
 ## Layer 1 - big soft cloud banks. Chunky rounded blobs, never wispy: a cartoon
 ## cloud has to read as a shape at any distance.
 func _build_clouds() -> void:
-	var white := Greybox.mat(Greybox.C_CLOUD, 1.0, 0.0, 0.10, 0.0)
-	var shade := Greybox.mat(Color(0.86, 0.90, 0.99), 1.0, 0.0, 0.04, 0.0)
+	var white := Greybox.mat(Greybox.C_CLOUD, 1.0, 0.0, 0.10)
+	var shade := Greybox.mat(Color(0.86, 0.90, 0.99), 1.0, 0.0, 0.04)
 	for i in int(34 * Quality.prop_density()):
 		var cloud := Node3D.new()
 		var far := _rng.randf_range(160.0, 460.0)
@@ -159,7 +159,7 @@ func _build_floaters() -> void:
 		var n := Node3D.new()
 		var col: Color = silk[i % silk.size()]
 		var r := _rng.randf_range(1.1, 2.6)
-		n.add_child(Greybox.mi(Greybox.sphere(r, 10), Greybox.mat(col, 1.0, 0.0, 0.25, 1.4)))
+		n.add_child(Greybox.mi(Greybox.sphere(r, 10), Greybox.mat(col, 1.0, 0.0, 0.25)))
 		n.add_child(Greybox.mi(Greybox.cone(r * 0.5, r * 0.7, 8),
 				Greybox.mat(col.darkened(0.25)), Vector3(0, -r * 0.85, 0)))
 		n.add_child(Greybox.mi(Greybox.box(Vector3(0.07, r * 2.4, 0.07)),
@@ -208,7 +208,7 @@ func _build_birds() -> void:
 ## Layer 4 - sand catching the light as it blows down the canyon. Long thin
 ## quads that only exist to put motion between the player and the far wall.
 func _build_sand_ribbons() -> void:
-	var haze := Greybox.mat(Color(1.0, 0.93, 0.74, 0.5), 1.0, 0.0, 0.5, 0.0)
+	var haze := Greybox.mat(Color(1.0, 0.93, 0.74, 0.5), 1.0, 0.0, 0.5)
 	for i in int(26 * Quality.prop_density()):
 		var r := Greybox.mi(Greybox.box(Vector3(_rng.randf_range(14.0, 40.0), 0.5, 1.2)), haze)
 		r.position = Vector3(_rng.randf_range(-80, 80), _rng.randf_range(-55, 14),
@@ -256,6 +256,7 @@ func _process(delta: float) -> void:
 		var base3: Vector3 = r["base"]
 		n3.position.x = wrapf(base3.x + _time * float(r["speed"]), -110.0, 110.0)
 		n3.position.y = base3.y + sin(_time * 0.6 + float(r["phase"])) * 1.4
+
 
 
 

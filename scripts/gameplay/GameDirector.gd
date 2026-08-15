@@ -24,6 +24,7 @@ var anim: CharacterAnimator
 var cam: CameraDirector
 var vfx: VFXDirector
 var hud: HUD
+var beat_ring: BeatRing
 var launch := LaunchController.new()
 
 var stage: Stage1Data.BuiltStage
@@ -94,6 +95,9 @@ func _ready() -> void:
 	anim = CharacterAnimator.new()
 	anim.name = "Character"
 	player.add_child(anim)
+	beat_ring = BeatRing.new()
+	beat_ring.name = "BeatRing"
+	player.add_child(beat_ring)
 
 	cam = CameraDirector.new()
 	cam.name = "Camera"
@@ -415,6 +419,7 @@ func _enter_ground(index: int, carry_x: float) -> void:
 	AudioDirector.set_act(d.act)
 	backdrop.set_act(d.act)
 	cam.set_view(CameraDirector.View.GROUND)
+	beat_ring.set_active(true)
 	cam.frame_depth = maxf(9.0, float(d.length - 1) * Tuning.TILE + 3.0)
 	vfx.suppress = true               ## GDD 23: reading time is visually calm
 
@@ -450,6 +455,7 @@ func _resolve_go() -> void:
 
 	player.release()
 	vfx.suppress = false
+	beat_ring.set_active(false)
 	if sec != null:
 		sec.reveal_all_candidates()
 		AudioDirector.play("sfx_reveal", 0.5)
@@ -463,6 +469,13 @@ func _resolve_go() -> void:
 		var early := BeatConductor.time_at_beat(go_beat) - _last_arrival_song_time
 		var grade := LaunchController.grade_for(early, d.timing_exempt)
 		_last_grade = grade
+		# Show the working, not just the verdict (see HUD.show_grade). Only for
+		# the opening stretch - after that the ring alone carries it.
+		if _sector_index < 12:
+			hud.show_grade(LaunchController.grade_name(grade),
+					[Color(1, 0.92, 0.45), Color(0.62, 0.92, 1.0),
+						Color(1.0, 0.62, 0.55)][int(grade)],
+					maxf(0.0, early), Tuning.GOOD_WINDOW * 1.6)
 		_launches += 1
 		_consecutive_glides = 0
 		if grade == LaunchController.Grade.PERFECT:
@@ -700,6 +713,7 @@ func _restart() -> void:
 	AudioDirector.set_paused(false)
 	BeatConductor.stop()
 	get_tree().reload_current_scene()
+
 
 
 
