@@ -1,4 +1,4 @@
-# MineBeat Rush - build the web version and publish it to GitHub Pages.
+﻿# MineBeat Rush - build the web version and publish it to GitHub Pages.
 #
 #   .\tools\deploy_web.ps1            # rebuild and publish at the current version
 #   .\tools\deploy_web.ps1 patch      # 0.2.0 -> 0.2.1, then publish
@@ -44,7 +44,7 @@ Write-Host "   $($summary.Trim())"
 
 # --- build -----------------------------------------------------------------
 Write-Host "-- export web" -ForegroundColor Yellow
-if (Test-Path $Build) { Remove-Item -Recurse -Force $Build }
+if (Test-Path $Build) { Remove-Item -Recurse -Force $Build -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force $Build | Out-Null
 & $Godot --headless --path $Root --export-release 'Web' (Join-Path $Build 'index.html') | Out-Null
 if (-not (Test-Path (Join-Path $Build 'index.wasm'))) { throw "export produced no wasm" }
@@ -86,3 +86,4 @@ Write-Host ""
 Write-Host "published v$version" -ForegroundColor Green
 Write-Host "  $url"
 Write-Host "  (first deploy can take a minute or two to go live)"
+
