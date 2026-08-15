@@ -1,4 +1,4 @@
-class_name VFXDirector
+﻿class_name VFXDirector
 extends Node3D
 
 ## GDD 16 - the world reacting, in cartoon grammar.
@@ -230,7 +230,7 @@ func mine_launch(pos: Vector3, big: bool = false) -> void:
 	var flash := Node3D.new()
 	flash.position = pos + Vector3(0, 1.0, 0)
 	var fm := _alpha_mat(Color(1.0, 0.95, 0.72, 1.0))
-	flash.add_child(Greybox.mi(Greybox.sphere(1.6 * k, 12), fm))
+	flash.add_child(Greybox.mi(Greybox.sphere(0.75 * k, 12), fm))
 	var lamp := OmniLight3D.new()
 	lamp.light_color = Color(1.0, 0.84, 0.48)
 	lamp.light_energy = 22.0 * k
@@ -238,8 +238,8 @@ func mine_launch(pos: Vector3, big: bool = false) -> void:
 	flash.add_child(lamp)
 	_push(flash, 0.26, "flash", {"mat": fm, "grow": 1.7, "light": lamp})
 
-	_star(pos + Vector3(0, 1.2, 0), 4.2 * k, Color(1.0, 0.93, 0.55), 0.42, 13)
-	_star(pos + Vector3(0, 1.2, 0), 2.4 * k, Color(1.0, 1.0, 0.95), 0.26, 9)
+	_star(pos + Vector3(0, 1.2, 0), 1.7 * k, Color(1.0, 0.93, 0.55), 0.34, 11)
+	_star(pos + Vector3(0, 1.2, 0), 1.0 * k, Color(1.0, 1.0, 0.95), 0.20, 8)
 	_shock_ring(pos, Color(1.0, 0.92, 0.68, 0.55), 2.8 * k, 0.32)
 	# GDD 16: the smoke opens as a *ring* at deck level so the character punches
 	# up through the hole in the middle of it. A ball of smoke centred on the
@@ -288,3 +288,4 @@ func dash_puff(pos: Vector3, dir: Vector3 = Vector3.ZERO) -> void:
 		var b := _aim_y(dir)
 		streak.basis = Basis(b.y, -b.x, b.z)
 		_push(streak, 0.18, "streak", {"mat": m, "vel": dir * 2.0})
+

@@ -100,7 +100,7 @@ func _load_art() -> void:
 		if parsed is Dictionary:
 			_meta = (parsed as Dictionary).get("parts", {})
 			_rig_meta = (parsed as Dictionary).get("rig", {})
-	for n in ["body_front", "rig_ear_l", "rig_ear_r",
+	for n in ["body_front", "body_quarter", "body_side", "body_back", "rig_ear_l", "rig_ear_r",
 			"rig_head_happy", "rig_head_surprised",
 			"rig_head_determined", "rig_head_worried"]:
 		var p: String = SPRITES + str(n) + ".png"
@@ -206,11 +206,16 @@ func _build() -> void:
 		var key: String = "rig_ear_" + str(side)
 		var es := _size_of(key)
 		var pm: Dictionary = _rig_meta.get(key, {})
+		# The pivot sits *inside* the skull, not on the crown. An ear cut from a
+		# sheet has a straight bottom edge; hinging it at the top of the head
+		# leaves that edge sitting on the silhouette where it reads as a
+		# severed ear. Hinged low and drawn behind, the head's own painted ear
+		# roots cover the cut - which is how a paper doll is pinned together.
 		var pivot := Node3D.new()
 		pivot.position = Vector3(
 			(float(pm.get("pivot_x", fw * 0.5)) - fw * 0.5) * _px,
-			hs.y * 0.94,
-			-0.003)
+			hs.y * 0.52,
+			-0.008)
 		_head.add_child(pivot)
 		var quad: Node3D = _paper(_tex.get(key), es)
 		quad.position = Vector3(0, es.y * 0.5, 0)
@@ -281,6 +286,7 @@ func set_state(s: State, g: LaunchController.Grade = LaunchController.Grade.PERF
 			_anticipate = 0.08
 	state = s
 	grade = g
+	_set_body(_body_for(s))
 	_set_face(_face_for(s, g))
 
 
@@ -295,14 +301,61 @@ func notify_dash(dir: Vector2i) -> void:
 func _face_for(s: State, g: LaunchController.Grade) -> String:
 	match s:
 		State.ARMED: return "surprised"
-		State.LAUNCH: return "determined"
-		State.APEX: return "happy" if g == LaunchController.Grade.PERFECT else "surprised"
-		State.FALL: return "surprised"
+		State.LAUNCH: return "determined" if _variant != 2 else "surprised"
+		State.APEX:
+			# Four expressions were drawn; a jump that always pulls the same one
+			# is three of them wasted.
+			if g == LaunchController.Grade.PERFECT:
+				return ["happy", "determined", "happy"][_variant]
+			return "surprised" if _variant == 0 else "worried"
+		State.FALL: return "surprised" if _variant != 1 else "worried"
 		State.LAND: return "worried" if g == LaunchController.Grade.BAD else "happy"
 		State.GLIDE: return "worried"
 		State.CHEER: return "happy"
 		State.DASH: return "determined"
 	return "happy"
+
+
+var _body_pose := "front"
+
+
+## The sheet drew the animal four times with the limbs in four different
+## places. Swapping which one is standing up is how a cut-out changes its arms
+## and legs - there is nothing to rotate, so the pose has to come from the art.
+func _set_body(pose: String) -> void:
+	var key := "body_" + pose
+	if _body_pose == pose or not _tex.has(key):
+		return
+	_body_pose = pose
+	var bs := _size_of(key)
+	var art := _art_of(_body)
+	(art.mesh as QuadMesh).size = bs
+	(art.material_override as StandardMaterial3D).albedo_texture = _tex[key]
+	var back := _body.get_child(0) as MeshInstance3D
+	(back.mesh as QuadMesh).size = bs * (1.0 + EDGE_GROW)
+	(back.material_override as ShaderMaterial).set_shader_parameter("shape", _tex[key])
+	_body.position = Vector3(0, bs.y * 0.5, 0)
+	# The head rides on top of whichever body is up, so the collar keeps meeting
+	# the chin no matter which one that is.
+	var hs := _size_of("rig_head_happy")
+	_neck.position = Vector3(0, bs.y - hs.y * NECK_OVERLAP, 0.004)
+
+
+func _body_for(s: State) -> String:
+	match s:
+		State.LAUNCH:
+			return "side" if _variant == 0 else "quarter"
+		State.APEX:
+			return ["front", "quarter", "side"][_variant]
+		State.FALL:
+			return "quarter" if _variant != 2 else "side"
+		State.GLIDE:
+			return "side"
+		State.DASH:
+			return "quarter"
+		State.CHEER:
+			return "quarter" if _variant == 1 else "front"
+	return "front"
 
 
 func _set_face(name: String) -> void:
@@ -586,5 +639,6 @@ func _update_scarf(dt: float) -> void:
 		_scarf[i].global_position = mid
 		_scarf[i].look_at(mid + dir, up, true)
 	_scarf[0].visible = false
+
 
 

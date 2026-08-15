@@ -350,6 +350,13 @@ func reveal_all_candidates() -> void:
 		var cap: Node3D = _covered_caps[cell]
 		var node: Node3D = _tiles[cell]
 		cap.queue_free()
+		# A covered cell is built without an opened face - the raised block was
+		# covering it. Taking the block away has to put one there, or the charge
+		# and the number sit on a bare untopped slab with no base under them.
+		node.add_child(Greybox.mi(
+			Greybox.plane(Vector2(Tuning.TILE, Tuning.TILE)),
+			_tile_mat("open_deck", false, Greybox.C_DECK),
+			Vector3(0, 0.006, 0)))
 		if grid.is_mine(cell):
 			node.add_child(_build_mine_visual())
 		else:
