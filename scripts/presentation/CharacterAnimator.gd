@@ -1,4 +1,4 @@
-class_name CharacterAnimator
+﻿class_name CharacterAnimator
 extends Node3D
 
 ## GDD 14 - the fennec, done the way Paper Mario does a character: the painted
@@ -47,10 +47,10 @@ var state: State = State.IDLE
 var grade: LaunchController.Grade = LaunchController.Grade.PERFECT
 
 var _rig: Node3D
-var _body: MeshInstance3D
+var _body: Node3D
 var _neck: Node3D
 var _head: Node3D
-var _head_quad: MeshInstance3D
+var _head_quad: Node3D
 var _head_mat: StandardMaterial3D
 var _ears: Array[Node3D] = []
 var _shadow: MeshInstance3D
@@ -116,9 +116,36 @@ func _load_art() -> void:
 	_px = FIGURE_H / maxf(1.0, stack)
 
 
-## Flat painted piece. Alpha-scissored so the drawn edge stays crisp and never
-## argues with the transparency sort, unshaded so the art arrives as painted.
-func _paper(tex: Texture2D, size: Vector2) -> MeshInstance3D:
+const PAPER_EDGE := preload("res://shaders/paper_edge.gdshader")
+## How far the card sticks out past the drawing, as a fraction of the piece.
+const EDGE_GROW := 0.045
+## How far the card sits behind the drawing. Enough to catch the light as a
+## separate surface, small enough that the piece still reads as one object.
+const EDGE_DEPTH := 0.020
+
+
+## One cut-out piece: the drawing, plus the card it was cut from.
+##
+## The card is the same silhouette in paper stock, a little larger and a little
+## behind. That white rim is what makes a piece read as *paper* rather than as a
+## sprite, and it is why the ears stopped looking severed - a cut edge is
+## supposed to be visible, it just has to be visibly card.
+func _paper(tex: Texture2D, size: Vector2) -> Node3D:
+	var holder := Node3D.new()
+
+	var back := MeshInstance3D.new()
+	var bq := QuadMesh.new()
+	bq.size = size * (1.0 + EDGE_GROW)
+	back.mesh = bq
+	var bm := ShaderMaterial.new()
+	bm.shader = PAPER_EDGE
+	bm.set_shader_parameter("shape", tex)
+	bm.set_shader_parameter("paper_color", Color(1.0, 0.985, 0.95))
+	back.material_override = bm
+	back.position = Vector3(0, 0, -EDGE_DEPTH)
+	back.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	holder.add_child(back)
+
 	var m := StandardMaterial3D.new()
 	m.albedo_texture = tex
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
@@ -128,11 +155,17 @@ func _paper(tex: Texture2D, size: Vector2) -> MeshInstance3D:
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var q := QuadMesh.new()
 	q.size = size
-	var mi := MeshInstance3D.new()
-	mi.mesh = q
-	mi.material_override = m
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	return mi
+	var art := MeshInstance3D.new()
+	art.name = "Art"
+	art.mesh = q
+	art.material_override = m
+	art.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	holder.add_child(art)
+	return holder
+
+
+func _art_of(piece: Node3D) -> MeshInstance3D:
+	return piece.get_node("Art") as MeshInstance3D
 
 
 func _size_of(name: String) -> Vector2:
@@ -161,7 +194,7 @@ func _build() -> void:
 	_neck.add_child(_head)
 	_head_quad = _paper(_tex.get("rig_head_happy"), hs)
 	_head_quad.position = Vector3(0, hs.y * 0.5, 0)
-	_head_mat = _head_quad.material_override as StandardMaterial3D
+	_head_mat = _art_of(_head_quad).material_override as StandardMaterial3D
 	_head.add_child(_head_quad)
 
 	# --- ears, pivoting on their own bases ----------------------------------
@@ -179,7 +212,7 @@ func _build() -> void:
 			hs.y * 0.94,
 			-0.003)
 		_head.add_child(pivot)
-		var quad := _paper(_tex.get(key), es)
+		var quad: Node3D = _paper(_tex.get(key), es)
 		quad.position = Vector3(0, es.y * 0.5, 0)
 		pivot.add_child(quad)
 		_ears.append(pivot)
@@ -231,9 +264,18 @@ func _build_scarf() -> void:
 # state
 # ---------------------------------------------------------------------------
 
+## Every entry into a state picks a different take on it. A character that hits
+## the identical pose 44 times in a row stops reading as a performance, which is
+## the single loudest thing separating a rig that "works" from one that is alive.
+var _variant := 0
+var _idle_beat := 0.0
+var _flick := 0.0
+
+
 func set_state(s: State, g: LaunchController.Grade = LaunchController.Grade.PERFECT) -> void:
 	if s != state:
 		_state_t = 0.0
+		_variant = randi() % 3
 		# GDD 7.2 step 1: wind up before anything explosive.
 		if s == State.LAUNCH:
 			_anticipate = 0.08
@@ -265,8 +307,14 @@ func _face_for(s: State, g: LaunchController.Grade) -> String:
 
 func _set_face(name: String) -> void:
 	var key := "rig_head_" + name
-	if _head_mat and _tex.has(key):
+	if not _tex.has(key):
+		return
+	if _head_mat:
 		_head_mat.albedo_texture = _tex[key]
+	# The card behind has to follow, or the paper edge keeps the old silhouette.
+	var back := _head_quad.get_child(0) as MeshInstance3D
+	if back and back.material_override is ShaderMaterial:
+		(back.material_override as ShaderMaterial).set_shader_parameter("shape", _tex[key])
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +359,22 @@ func _drive(dt: float) -> void:
 			squash = sin(_time * 3.0) * 0.045
 			head = sin(_time * 0.8) * 4.0
 			ear = 1.0 + sin(_time * 2.2) * 0.06
+			# An idle that only breathes is a mannequin. Every couple of seconds
+			# it does something small and unrepeated instead.
+			_idle_beat -= dt
+			if _idle_beat <= 0.0:
+				_idle_beat = randf_range(1.4, 3.2)
+				_flick = 1.0
+				_variant = randi() % 3
+			_flick = maxf(0.0, _flick - dt * 2.4)
+			match _variant:
+				0:
+					ear += _flick * 0.9                 # ear flick
+				1:
+					head += _flick * 22.0               # look around
+				_:
+					squash -= _flick * 0.16             # a little bob
+					fan = _flick * 0.35
 			stiff = 90.0
 
 		State.DASH:
@@ -348,6 +412,16 @@ func _drive(dt: float) -> void:
 			head = -18.0
 			ear = 0.5
 			fan = 1.0
+			# Three takes on the same beat, so the apex is never the same twice.
+			match _variant:
+				0:
+					lean = -6.0 + sin(_time * 2.2) * 5.0    # a slow proud turn
+				1:
+					squash = -0.26                          # wide open, arms out
+					head = -24.0
+				_:
+					lean = 14.0                             # a cocky back-lean
+					head = -10.0
 			if grade == LaunchController.Grade.GOOD:
 				lean = -16.0
 			elif grade == LaunchController.Grade.BAD:
@@ -512,3 +586,5 @@ func _update_scarf(dt: float) -> void:
 		_scarf[i].global_position = mid
 		_scarf[i].look_at(mid + dir, up, true)
 	_scarf[0].visible = false
+
+

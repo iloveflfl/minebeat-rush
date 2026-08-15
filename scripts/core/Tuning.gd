@@ -1,4 +1,4 @@
-class_name Tuning
+﻿class_name Tuning
 extends RefCounted
 
 ## GDD 28: initial tuning values. These are [TUNE], not [LOCK] - they exist in
@@ -7,7 +7,7 @@ extends RefCounted
 # --- space -------------------------------------------------------------------
 const TILE := 2.0                     ## GDD 28: 1.8~2.2 m per tile edge
 const DECK_THICKNESS := 0.55
-const COVERED_RISE := 0.34            ## raised unopened slab vs. opened slab
+const COVERED_RISE := 0.55            ## an unopened slab is a block, not a card
 
 # --- ground movement ---------------------------------------------------------
 ## GDD 28 offered 0.10~0.16 s as a *starting* range and marks it [TUNE].
@@ -16,7 +16,7 @@ const COVERED_RISE := 0.34            ## raised unopened slab vs. opened slab
 ## puff and the arrival snap all still land inside it.
 const DASH_TIME := 0.09
 const DASH_TIME_SAND := 0.16          ## GDD 9.2 [TEST]: sand-covered tile
-const INPUT_BUFFER := 0.14            ## one queued input, so 연타 never drops
+const INPUT_BUFFER := 0.14            ## one queued input, so fast taps never drop
 
 # --- beat structure (GDD 6 [LOCK]) -------------------------------------------
 const GROUND_BEATS := 4               ## landing GO -> 3 -> 2 -> 1 -> launch GO
@@ -49,3 +49,4 @@ static func ground_dash_budget(ground_seconds: float) -> int:
 
 static func sector_ground_beat(index: int) -> float:
 	return float(FIRST_GROUND_BEAT + CYCLE_BEATS * index)
+

@@ -1,4 +1,4 @@
-class_name BridgeSector
+﻿class_name BridgeSector
 extends Node3D
 
 ## GDD 9 / 25: one authored stretch of the bridge.
@@ -144,12 +144,22 @@ func _build_covered_cap(node: Node3D, cell: Vector2i) -> void:
 	node.add_child(cap)
 	cap.add_child(Greybox.mi(
 		Greybox.box(Vector3(Tuning.TILE, Tuning.COVERED_RISE, Tuning.TILE)),
-		_m("cov_side", Greybox.C_COVERED.darkened(0.30)),
+		_m("cov_side", Greybox.C_COVERED.darkened(0.16)),
 		Vector3(0, Tuning.COVERED_RISE * 0.5, 0)))
 	cap.add_child(Greybox.mi(
 		Greybox.plane(Vector2(Tuning.TILE, Tuning.TILE)),
 		_tile_mat("cov_face", true, Greybox.C_COVERED),
 		Vector3(0, Tuning.COVERED_RISE + 0.006, 0)))
+	# A dark seat under the block so it reads as *sitting on* the deck instead of
+	# floating above it, and a kerb round the base to catch the light.
+	cap.add_child(Greybox.mi(
+		Greybox.box(Vector3(Tuning.TILE * 1.02, 0.05, Tuning.TILE * 1.02)),
+		_m("cov_seat", Greybox.C_COVERED.darkened(0.55)),
+		Vector3(0, 0.03, 0)))
+	cap.add_child(Greybox.mi(
+		Greybox.box(Vector3(Tuning.TILE * 0.99, 0.07, Tuning.TILE * 0.99)),
+		_m("cov_kerb", Greybox.C_COVERED.darkened(0.05)),
+		Vector3(0, Tuning.COVERED_RISE - 0.05, 0)))
 	_covered_caps[cell] = cap
 
 
@@ -438,3 +448,4 @@ func _process(delta: float) -> void:
 	if _collapse_t > 5.5:
 		collapse_finished.emit()
 		queue_free()
+
