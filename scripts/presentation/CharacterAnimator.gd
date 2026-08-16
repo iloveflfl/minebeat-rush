@@ -218,7 +218,9 @@ func _build() -> void:
 	# land exactly where the ears were drawn rather than being eyeballed here.
 	var frame: Dictionary = _rig_meta.get("_frame", {})
 	var fw: float = float(frame.get("head_w", 288))
-	for side in ["l", "r"]:
+	# No separate ear pieces. See _follow_through for why: they doubled the
+	# painted ears the moment they moved.
+	for side in []:
 		var key: String = "rig_ear_" + str(side)
 		var es := _size_of(key)
 		var pm: Dictionary = _rig_meta.get(key, {})
@@ -609,16 +611,19 @@ func _deck_y() -> float:
 func _follow_through(dt: float) -> void:
 	_head_lag.step(clampf(-_velocity.x * 2.2, -26.0, 26.0), 130.0, 14.0, dt)
 
-	var vert := clampf(-_velocity.y * 1.6, -60.0, 60.0)
-	var lat := clampf(-_velocity.x * 2.8, -50.0, 50.0)
-	for i in _ears.size():
-		var sx := -1.0 if i == 0 else 1.0
-		var lag: float = _ear_lag[i].step(vert * 0.5 + lat * 0.4, 110.0, 12.0, dt)
-		# Straight up when alert, swept back when moving fast, fanned wide open
-		# at the apex and on a hard landing.
-		var base := lerpf(46.0, -6.0, clampf(_s_ear.v * 0.5 + 0.5, 0.0, 1.0))
-		var twitch := sin(_time * 5.4 + float(i) * 1.7) * 1.6
-		_ears[i].rotation_degrees.z = clampf(sx * (base * 0.30 + _s_fan.v * 15.0) + lag * 0.22 + twitch, -19.0, 19.0)
+	# The ears are painted into the head plate, so the plate is what carries them.
+	# Alert stretches it tall, a hard dash squashes it back, the apex fans it
+	# wide - the drawn ears follow because they are part of the drawing.
+	#
+	# They used to be separate hinged pieces laid over the painted ones. That put
+	# a second pair on screen the instant the real ones moved, and clamping the
+	# rotation to hide it was concealment, not a fix. One plate cannot double.
+	var alert := clampf(_s_ear.v, -1.0, 1.6)
+	var stretch := 1.0 + alert * 0.10 - _s_fan.v * 0.05
+	var widen := 1.0 - alert * 0.04 + _s_fan.v * 0.15
+	var lag: float = _ear_lag[0].step(clampf(-_velocity.y * 0.9, -18.0, 18.0), 110.0, 12.0, dt)
+	var twitch := sin(_time * 5.4) * 0.006
+	_head_quad.scale = Vector3(widen + twitch, stretch + lag * 0.004 - twitch, 1.0)
 
 
 func _update_scarf(dt: float) -> void:

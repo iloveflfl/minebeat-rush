@@ -234,6 +234,48 @@ def face_only(rgba):
 EAR_SPLIT = 0.44
 
 
+def _disk(r):
+    y, x = np.ogrid[-r:r + 1, -r:r + 1]
+    return x * x + y * y <= r * r
+
+
+def remove_ears(rgba):
+    """Delete the painted ears from a head plate, cutting along the silhouette.
+
+    The articulated ears are laid on top of this plate. Leaving the painted ones
+    underneath meant the character had four ears the moment the real ones moved
+    at all - a doubled outline that no amount of limiting the rotation fixes,
+    because limiting it is concealment, not a cut.
+
+    Cutting them off with a straight line is what caused the earlier problem: a
+    horizontal edge across a drawn shape reads as damage. So the cut follows the
+    art instead. A morphological opening erases anything narrower than the disk
+    - the ears are about 90 px across, the skull about 190 - and what survives
+    is the head with its own curved boundary.
+    """
+    alpha = rgba[..., 3] > 0
+    core = ndimage.binary_opening(alpha, structure=_disk(46))
+    lab, n = ndimage.label(core)
+    if n == 0:
+        return rgba
+    # Keep the piece the chin belongs to, in case the opening leaves crumbs.
+    h, w = alpha.shape
+    ys, xs = np.nonzero(core)
+    if ys.size == 0:
+        return rgba
+    keep = lab[ys[np.argmax(ys)], xs[np.argmax(ys)]]
+    core = lab == keep
+    # Grow back what the opening shaved off the head itself, then clip to the
+    # original silhouette so the outline stays exactly as drawn.
+    core = ndimage.binary_dilation(core, structure=_disk(46)) & alpha
+
+    out = rgba.copy()
+    out[..., 3] = np.where(core, rgba[..., 3], 0)
+    rows = np.nonzero((out[..., 3] > 0).any(axis=1))[0]
+    cols = np.nonzero((out[..., 3] > 0).any(axis=0))[0]
+    return out[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
+
+
 def cut_rig_parts(faces):
     """Split the expression heads into the pieces a 2D cutout rig needs.
 
@@ -269,7 +311,7 @@ def cut_rig_parts(faces):
     # four expressions; they are drawn at one scale, so a fixed proportion is the
     # measurement. One collar, on the body, covering the join.
     COLLAR_FRAC = 0.075
-    trimmed = {name: a[:int(a.shape[0] * (1.0 - COLLAR_FRAC))]
+    trimmed = {name: remove_ears(a[:int(a.shape[0] * (1.0 - COLLAR_FRAC))])
                for name, a in faces.items()}
 
     cw = max(t.shape[1] for t in trimmed.values())
