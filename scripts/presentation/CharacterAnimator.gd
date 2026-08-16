@@ -149,58 +149,71 @@ func _ready() -> void:
 func _build() -> void:
 	var S := FIGURE_H
 	var s := FoxPuppet.scale_for(S)
+	var b := FoxPuppet.boxes()
 
 	_rig = Node3D.new()
 	_rig.name = "Rig"
 	add_child(_rig)
 
-	# The hips sit on the floor line of the drawing, so squash scales the figure
-	# about its own feet rather than about an arbitrary point in the air.
+	# Joints, in the drawing's own pixels. Every one of these was read off a
+	# labelled grid of the panel rather than estimated, and they are the places
+	# the animal actually bends: the hip line, the shoulder each folded forepaw
+	# hangs from, the throat the head turns on.
 	var feet := Vector2(FoxPuppet.centre_x(), FoxPuppet.floor_y())
+	var hips := Vector2(197.0, 470.0)
+	var neck := Vector2(193.0, 302.0)
+	var sho := [Vector2(180.0, 336.0), Vector2(224.0, 334.0)]
+	var hip_j := [Vector2(176.0, 428.0), Vector2(218.0, 428.0)]
+
 	_hips = Node3D.new()
 	var fl := FoxPuppet.to_local(feet, s)
 	_hips.position = Vector3(fl.x, fl.y, 0)
 	_rig.add_child(_hips)
 
-	# --- body: chest, arms, legs and tail, exactly as drawn -----------------
-	# These were four separate pieces when the character was being redrawn as
-	# shapes. On the sheet they are one mass of overlapping fur with the tail
-	# wrapped round the legs, and cutting them apart would mean inventing what
-	# is behind each one. They stay together and the body deforms as a whole.
-	_torso = FoxPuppet.quad(_hips, "body", feet, feet, s, 0.0)
-	_legs.clear()
-	_arms.clear()
+	# Back to front. The order is the rig: a leg's cut root is hidden because
+	# the torso is drawn over it, so nothing has to be painted back in.
+	_tail = FoxPuppet.quad(_hips, "tail", Vector2(200.0, 450.0), feet, s, -0.030)
 
-	# --- scarf: the wrap, and two ends that hang and stream -----------------
-	var cb: Array = FoxPuppet.boxes()["scarf_collar"]
-	var collar_px := Vector2((float(cb[0]) + float(cb[2])) * 0.5, float(cb[3]) - 6.0)
+	_legs.clear()
+	for i in 2:
+		var nm := "leg_l" if i == 0 else "leg_r"
+		var leg := FoxPuppet.quad(_hips, nm, hip_j[i], feet, s,
+				-0.014 + float(i) * 0.002)
+		_legs.append(leg)
+
+	_torso = FoxPuppet.quad(_hips, "torso", hips, feet, s, 0.0)
+
 	_scarf_ends.clear()
 	for part in ["scarf_end_l", "scarf_end_r"]:
-		var end := FoxPuppet.BendPart.new(_hips, part, feet, s, 0.010, 0.06)
+		var end := FoxPuppet.BendPart.new(_torso, part, hips, s, 0.018, 0.06)
 		_scarf_strands.append(end.strand)
 		_scarf_parts.append(end)
 
-	_collar = FoxPuppet.quad(_hips, "scarf_collar", collar_px, feet, s, 0.020)
+	# In front of the scarf. Behind it the forepaws were completely covered, so
+	# the one limb with the largest swing in the whole rig moved invisibly - the
+	# same layering mistake that made the vector version look armless.
+	_arms.clear()
+	for j in 2:
+		var nmp := "paw_l" if j == 0 else "paw_r"
+		var paw := FoxPuppet.quad(_torso, nmp, sho[j], hips, s,
+				0.026 + float(j) * 0.002)
+		_arms.append(paw)
 
-	# --- head, with the ears hung behind it ---------------------------------
 	_neck = Node3D.new()
-	var nl := FoxPuppet.to_local(collar_px, s) - FoxPuppet.to_local(feet, s)
+	var nl := FoxPuppet.to_local(neck, s) - FoxPuppet.to_local(hips, s)
 	_neck.position = Vector3(nl.x, nl.y, 0.030)
-	_hips.add_child(_neck)
+	_torso.add_child(_neck)
 
-	# Ears first, and behind: they are cut generously into the head, and the
-	# head is drawn over the join. The straight edge of the cut exists and is
-	# never once on screen.
 	_ears.clear()
 	for part2 in ["ear_l", "ear_r"]:
-		var ear := FoxPuppet.BendPart.new(_neck, part2, collar_px, s, -0.010, 0.62)
+		var ear := FoxPuppet.BendPart.new(_neck, part2, neck, s, -0.012, 0.62)
 		_ear_strands.append(ear.strand)
 		_ear_parts.append(ear)
 
-	_head = FoxPuppet.quad(_neck, "head", collar_px, collar_px, s, 0.004)
+	_head = FoxPuppet.quad(_neck, "head", neck, neck, s, 0.004)
+	_collar = FoxPuppet.quad(_torso, "scarf_collar", neck, hips, s, 0.048)
 
 	_build_shadow()
-
 
 ## Draw order inside the head.
 ##

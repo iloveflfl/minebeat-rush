@@ -37,6 +37,26 @@ HEAD = [(168, 118), (188, 138), (206, 116), (218, 144), (248, 148),
         (222, 314), (182, 310), (146, 296), (116, 276), (100, 246),
         (101, 204), (120, 170), (146, 146)]
 
+# The limbs, cut so their roots run well up under the torso.
+#
+# This is the same trick the ears use, and it is what keeps the reconstruction
+# work small: a leg is cut with a generous rounded top that the torso is drawn
+# over, so the straight edge of the cut is never on screen and the only place
+# genuinely needing to be painted back in is the chest behind the forepaws.
+PAW_L = [(158, 336), (176, 326), (196, 332), (208, 350), (210, 372),
+         (200, 390), (180, 394), (163, 384), (155, 362)]
+PAW_R = [(206, 334), (224, 324), (242, 332), (250, 352), (248, 376),
+         (236, 394), (216, 396), (203, 380), (200, 356)]
+LEG_L = [(150, 424), (176, 416), (196, 428), (198, 470), (196, 512),
+         (194, 548), (188, 566), (166, 570), (152, 560), (148, 520),
+         (144, 476)]
+LEG_R = [(196, 428), (216, 416), (240, 424), (244, 474), (246, 520),
+         (242, 558), (228, 570), (206, 568), (198, 550), (196, 512)]
+# The torso, taken to include the hip mass the legs plug into.
+TORSO = [(160, 296), (200, 292), (240, 298), (250, 330), (252, 372),
+         (248, 412), (244, 452), (234, 486), (206, 496), (176, 490),
+         (156, 456), (150, 412), (148, 356), (152, 320)]
+
 SCARF_RED = np.array([216, 60, 36], dtype=np.int16)
 
 
@@ -187,12 +207,43 @@ def main() -> None:
     body_alpha[ear_l_d > 0] = 0
     body_alpha[ear_r_d > 0] = 0
 
+    # --- limbs --------------------------------------------------------------
+    paw_l = (poly_mask((h, w), PAW_L) > 0) & (body_alpha > 0)
+    paw_r = (poly_mask((h, w), PAW_R) > 0) & (body_alpha > 0)
+    leg_l = (poly_mask((h, w), LEG_L) > 0) & (body_alpha > 0)
+    leg_r = (poly_mask((h, w), LEG_R) > 0) & (body_alpha > 0)
+    torso = (poly_mask((h, w), TORSO) > 0) & (body_alpha > 0)
+
+    # The chest the forepaws are folded against has to exist for them to lift
+    # away from. It is a flat area of one colour, so it is filled with the
+    # colour rather than guessed at by an inpainter.
+    paws = (paw_l | paw_r)
+    chest_band = (torso & ~paws & (ys > 300) & (ys < 420))
+    if chest_band.any():
+        chest_fur = np.median(a[:, :, :3][chest_band], axis=0).astype(np.uint8)
+    else:
+        chest_fur = fur
+    torso_rgba = body_rgba.copy()
+    behind = cv2.dilate((paws & torso).astype(np.uint8),
+                        np.ones((5, 5), np.uint8)) > 0
+    torso_rgba[:, :, :3] = np.where(behind[:, :, None], chest_fur,
+                                    torso_rgba[:, :, :3])
+    # What remains of the body once the named limbs are taken out: the tail.
+    tail = body_alpha.copy()
+    for m in (paw_l, paw_r, leg_l, leg_r, torso):
+        tail[m] = 0
+
     print("\nparts:")
     boxes = {}
     boxes["ear_l"] = save(a, ear_l, "ear_l")
     boxes["ear_r"] = save(a, ear_r, "ear_r")
     boxes["head"] = save(a, head, "head")
-    boxes["body"] = save(body_rgba, body_alpha, "body")
+    boxes["tail"] = save(body_rgba, tail, "tail")
+    boxes["leg_l"] = save(body_rgba, (leg_l * 255).astype(np.uint8), "leg_l")
+    boxes["leg_r"] = save(body_rgba, (leg_r * 255).astype(np.uint8), "leg_r")
+    boxes["torso"] = save(torso_rgba, (torso * 255).astype(np.uint8), "torso")
+    boxes["paw_l"] = save(body_rgba, (paw_l * 255).astype(np.uint8), "paw_l")
+    boxes["paw_r"] = save(body_rgba, (paw_r * 255).astype(np.uint8), "paw_r")
     boxes["scarf_collar"] = save(a, collar, "scarf_collar")
     boxes["scarf_end_l"] = save(a, end_l, "scarf_end_l")
     boxes["scarf_end_r"] = save(a, end_r, "scarf_end_r")

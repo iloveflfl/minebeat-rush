@@ -53,10 +53,19 @@ static func panel() -> Vector2:
 	return Vector2(float(p[0]), float(p[1]))
 
 
-## The line the character stands on: the bottom of the body piece.
+## The line the character stands on: the bottom of whatever reaches lowest.
+##
+## Derived rather than named, because the part that touches the ground changed
+## when the body was split into limbs, and the old lookup silently fell back to
+## a placeholder box - which put the floor two pixels below the top of the
+## drawing and sank the whole character through the deck.
 static func floor_y() -> float:
-	var b: Array = boxes().get("body", [0, 0, 1, 1])
-	return float(b[3]) - 3.0
+	var low := 0.0
+	for k in ["leg_l", "leg_r", "torso"]:
+		var b: Array = boxes().get(k, [])
+		if b.size() == 4:
+			low = maxf(low, float(b[3]))
+	return low - 3.0 if low > 0.0 else panel().y
 
 
 static func centre_x() -> float:

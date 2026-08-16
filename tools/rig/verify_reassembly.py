@@ -17,7 +17,8 @@ PARTS = r"S:\GameDev\MineBeatRush\assets\character\parts"
 OUT = r"S:\GameDev\MineBeatRush\tools\rig"
 
 # Back to front, the same order the rig stacks them in.
-ORDER = ["ear_l", "ear_r", "body", "scarf_end_l", "scarf_end_r", "head",
+ORDER = ["ear_l", "ear_r", "tail", "leg_l", "leg_r", "torso",
+         "paw_l", "paw_r", "scarf_end_l", "scarf_end_r", "head",
          "scarf_collar"]
 
 
