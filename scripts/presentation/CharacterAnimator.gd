@@ -806,13 +806,24 @@ func _apply(dt: float) -> void:
 				+ _s_asym.v * (0.50 if i == 1 else -0.18)
 		_legs[i].position.y = -0.04 * FIGURE_H * _s_leg.v
 
+	# The forepaws move a little, on purpose.
+	#
+	# On the sheet these are small folded paws held against the chest, not arms.
+	# Swung through the 136 degrees the vector rig used, the drawing stops being
+	# a paw and becomes a detached mitten beside the body - the art simply does
+	# not contain an extended arm, and no rig can rotate one into existence.
+	# This character has to be expressive through its body, legs, ears and
+	# scarf, which is what the drawing actually supports.
 	for i in _arms.size():
 		var asx := -1.0 if i == 0 else 1.0
 		var a := _s_arm.v
-		var swing := (16.0 + 120.0 * maxf(0.0, a) * (0.45 + 0.55 * _s_fan.v)) \
-				- 50.0 * maxf(0.0, -a)
+		var swing := (6.0 + 26.0 * maxf(0.0, a) * (0.5 + 0.5 * _s_fan.v)) \
+				- 14.0 * maxf(0.0, -a)
 		_arms[i].rotation_degrees.z = asx * swing \
-				+ _s_asym.v * (1.0 if i == 1 else -0.42)
+				+ _s_asym.v * (0.30 if i == 1 else -0.13)
+		# A little lift with the swing, so the paws read as pulling in rather
+		# than pivoting on a pin.
+		_arms[i].position.y = 0.012 * FIGURE_H * maxf(0.0, a)
 
 	for i in _scarf_ends.size():
 		# Only the anchor is posed. Where the rest of the scarf goes is the

@@ -47,15 +47,23 @@ PAW_L = [(158, 336), (176, 326), (196, 332), (208, 350), (210, 372),
          (200, 390), (180, 394), (163, 384), (155, 362)]
 PAW_R = [(206, 334), (224, 324), (242, 332), (250, 352), (248, 376),
          (236, 394), (216, 396), (203, 380), (200, 356)]
-LEG_L = [(150, 424), (176, 416), (196, 428), (198, 470), (196, 512),
+# Roots taken well up into the hip, so a leg stays anchored under the torso
+# however far it swings.
+LEG_L = [(150, 404), (176, 396), (196, 408), (198, 470), (196, 512),
          (194, 548), (188, 566), (166, 570), (152, 560), (148, 520),
-         (144, 476)]
-LEG_R = [(196, 428), (216, 416), (240, 424), (244, 474), (246, 520),
+         (144, 462)]
+LEG_R = [(196, 408), (216, 396), (240, 404), (244, 474), (246, 520),
          (242, 558), (228, 570), (206, 568), (198, 550), (196, 512)]
-# The torso, taken to include the hip mass the legs plug into.
+# The torso, taken down to a rounded hip the legs plug into.
+#
+# Its lower boundary is a curve, not a straight cut. Closed off flat, the moment
+# the legs splayed they swung clear of it and left the torso's own cut edge
+# drawn across the belly as a hard horizontal line. A rounded hip is both what
+# the animal has and an edge that reads as anatomy when it does show.
 TORSO = [(160, 296), (200, 292), (240, 298), (250, 330), (252, 372),
-         (248, 412), (244, 452), (234, 486), (206, 496), (176, 490),
-         (156, 456), (150, 412), (148, 356), (152, 320)]
+         (249, 412), (246, 450), (240, 484), (230, 512), (214, 528),
+         (196, 530), (178, 520), (166, 498), (158, 466), (152, 424),
+         (148, 372), (152, 320)]
 
 SCARF_RED = np.array([216, 60, 36], dtype=np.int16)
 
