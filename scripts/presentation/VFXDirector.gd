@@ -1,4 +1,4 @@
-﻿class_name VFXDirector
+class_name VFXDirector
 extends Node3D
 
 ## GDD 16 - the world reacting, in cartoon grammar.
@@ -15,6 +15,8 @@ extends Node3D
 ## explosion (GDD 30).
 
 var suppress := false
+## Development: kill every effect so the geometry underneath can be inspected.
+var disabled := false
 
 class _Transient extends RefCounted:
 	var node: Node3D
@@ -225,6 +227,8 @@ func _shock_ring(pos: Vector3, color: Color, grow: float, life: float) -> void:
 ## on the deck, fat smoke and real debris - and the character silhouette punching
 ## straight out of the middle of it.
 func mine_launch(pos: Vector3, big: bool = false) -> void:
+	if disabled:
+		return
 	var k := 2.0 if big else 1.0
 
 	var flash := Node3D.new()
@@ -251,6 +255,8 @@ func mine_launch(pos: Vector3, big: bool = false) -> void:
 
 
 func landing(pos: Vector3, grade: LaunchController.Grade) -> void:
+	if disabled:
+		return
 	var power := 1.35 if grade == LaunchController.Grade.BAD else 1.0
 	_shock_ring(pos, Color(0.95, 0.88, 0.70, 0.45), 1.9 * power, 0.32)
 	_puffs(pos, 6, 1.5 * power, 0.6 * power, Color(1.0, 0.96, 0.86), 0.5, 1.2)
@@ -263,11 +269,15 @@ func landing(pos: Vector3, grade: LaunchController.Grade) -> void:
 
 
 func scarf_deploy(pos: Vector3) -> void:
+	if disabled:
+		return
 	_star(pos + Vector3(0, 0.9, 0), 2.0, Greybox.C_SCARF.lightened(0.25), 0.3, 9)
 	_puffs(pos, 5, 1.4, 0.6, Color(1.0, 0.82, 0.80), 0.6, 1.6)
 
 
 func collapse_burst(pos: Vector3, width: float) -> void:
+	if disabled:
+		return
 	_puffs(pos, 10, width * 0.45, width * 0.16, Color(0.98, 0.92, 0.80), 1.3, 1.4)
 	_chunks(pos, 12, width * 0.55, Greybox.C_DECK_EDGE, 1.8)
 

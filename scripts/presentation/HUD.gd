@@ -111,22 +111,53 @@ func _build_joystick() -> void:
 		_joy_parts.append(l)
 
 
-## The back arrow does not "turn off". It is knocked out of the frame, because
-## the real reason is that the deck behind is gone (GDD 12.3).
+## GDD 12.3: the back arrow is not switched off, it is destroyed. It shatters
+## into pieces that spin away and fall out of frame while the other three flare
+## once - the blast took it. The real reason the player cannot go back is that
+## the bridge behind them is gone; this is the moment that reads on screen.
 func break_joystick() -> void:
 	if _joy_parts.size() < 4:
 		return
 	var back := _joy_parts[3]
-	var tw := create_tween().set_parallel(true)
-	tw.tween_property(back, "position", back.position + Vector2(60, 160), 0.9)
-	tw.tween_property(back, "rotation", 3.4, 0.9)
-	tw.tween_property(back, "modulate:a", 0.0, 0.9)
+	back.visible = false
+
+	for i in 4:
+		var shard := Label.new()
+		shard.text = ["\u25e2", "\u25e3", "\u25e4", "\u25e5"][i]
+		_style_label(shard, 22, Color(1, 0.86, 0.62, 0.95))
+		shard.position = back.position + Vector2(randf_range(-6, 6), randf_range(-6, 6))
+		_joystick.add_child(shard)
+		var dir := Vector2(randf_range(-1.0, 1.0), randf_range(-0.9, -0.2)).normalized()
+		var tw := create_tween().set_parallel(true)
+		tw.tween_property(shard, "position",
+				shard.position + dir * randf_range(90, 190) + Vector2(0, 210), 1.1) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.tween_property(shard, "rotation", randf_range(-7.0, 7.0), 1.1)
+		tw.tween_property(shard, "modulate:a", 0.0, 1.1).set_delay(0.45)
+
+	# The three that survive flash white, then bow out - they have been learned.
 	for i in 3:
 		var p := _joy_parts[i]
 		var t2 := create_tween()
-		t2.tween_property(p, "modulate:a", 0.0, 0.7).set_delay(0.9 + i * 0.1)
+		t2.tween_property(p, "modulate", Color(1, 1, 1, 1), 0.08)
+		t2.tween_property(p, "scale", Vector2(1.35, 1.35), 0.10)
+		t2.tween_property(p, "scale", Vector2(1.0, 1.0), 0.16)
+		t2.tween_property(p, "modulate:a", 0.0, 0.6).set_delay(1.2 + i * 0.12)
 	var t3 := create_tween()
-	t3.tween_property(_joystick, "modulate:a", 0.0, 0.4).set_delay(2.0)
+	t3.tween_property(_joystick, "modulate:a", 0.0, 0.5).set_delay(2.4)
+
+
+## A full-screen flash. Used once, for the blast that starts the game.
+func flash(color: Color, hold: float, fade: float) -> void:
+	var f := ColorRect.new()
+	f.set_anchors_preset(Control.PRESET_FULL_RECT)
+	f.color = color
+	f.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(f)
+	var tw := create_tween()
+	tw.tween_interval(hold)
+	tw.tween_property(f, "color:a", 0.0, fade)
+	tw.tween_callback(f.queue_free)
 
 
 func hide_joystick() -> void:

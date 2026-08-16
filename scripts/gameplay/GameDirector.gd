@@ -1,4 +1,4 @@
-﻿extends Node3D
+extends Node3D
 
 ## GDD 25 - stage start/end, Act transitions, the destination.
 ##
@@ -121,6 +121,7 @@ func _ready() -> void:
 
 	_parse_dev_args()
 	cam.closeup = _closeup
+	vfx.disabled = _no_vfx
 	if _dev_sector >= 0:
 		_dev_jump_to_sector(_dev_sector)
 	else:
@@ -136,6 +137,7 @@ func _ready() -> void:
 var _dev_sector := -1
 var _auto_play := false
 var _closeup := 0.0
+var _no_vfx := false
 var _shot_dir := ""
 var _shot_beat_step := 0.75
 var _shots_left := 0
@@ -166,6 +168,8 @@ func _parse_dev_args() -> void:
 					_shot_beat_step = float(args[i + 1])
 			"--auto":
 				_auto_play = true
+			"--no-vfx":
+				_no_vfx = true
 			"--closeup":
 				if i + 1 < args.size():
 					_closeup = float(args[i + 1])
@@ -353,8 +357,11 @@ func _arm_charge(auto: bool) -> void:
 	state = State.ARMED
 	player.release()
 	anim.set_state(CharacterAnimator.State.ARMED)
-	AudioDirector.set_act("Accident")
 	AudioDirector.play("sfx_click", 1.0 if not auto else 0.6)
+	# GDD 12.2 step 3: "아주 짧은 정적". The camera drops in close and the world
+	# goes quiet on the live charge - the one held breath in the whole stage.
+	cam.set_view(CameraDirector.View.ARMED)
+	AudioDirector.set_act("Accident")
 
 	var now := BeatConductor.beat
 	var earliest := now + 2.0
@@ -374,8 +381,13 @@ func _do_accident() -> void:
 	vfx.mine_launch(from, true)
 	vfx.collapse_burst(from + Vector3(0, -1, 6), 10.0)
 	AudioDirector.play("sfx_explosion", 1.0)
+	AudioDirector.play("sfx_pop", 0.9)
 	AudioDirector.play("sfx_collapse", 0.8)
-	cam.impulse(0.9, 9.0)
+	cam.impulse(1.5, 7.0)
+	# The three things that turn an event into an impact: a frame of white, a
+	# locked pose, and a camera that has clearly been hit.
+	hud.flash(Color(1, 0.97, 0.88, 0.95), 0.05, 0.5)
+	anim.hit_stop(0.09)
 	cam.set_view(CameraDirector.View.LAUNCH)
 	hud.break_joystick()
 
@@ -498,7 +510,9 @@ func _resolve_go() -> void:
 		AudioDirector.play("sfx_pop", 0.8, 1.0 if big else 1.18, 0.05)
 		if grade == LaunchController.Grade.PERFECT:
 			AudioDirector.play("sfx_sparkle", 0.5, 1.0, 0.04)
-		cam.impulse(0.85 if big else 0.55, 9.0)
+		cam.impulse(1.0 if big else 0.7, 9.0)
+		anim.hit_stop(0.07)
+		AudioDirector.play("sfx_pop", 0.55, 1.15)
 		launch.begin_launch(go_beat, from, target, grade)
 		anim.set_state(CharacterAnimator.State.LAUNCH, grade)
 	else:
@@ -555,7 +569,8 @@ func _do_landing() -> void:
 	var pos := launch.sample(launch.end_beat)
 	AudioDirector.play("sfx_land", 0.9 if _last_grade != LaunchController.Grade.BAD else 1.0)
 	vfx.landing(pos, _last_grade)
-	cam.impulse(0.28, 12.0)
+	cam.impulse(0.34, 12.0)
+	anim.hit_stop(0.05)
 	anim.set_state(CharacterAnimator.State.LAND, _last_grade)
 
 	if state == State.GATE_AIR:

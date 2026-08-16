@@ -86,6 +86,13 @@ var _state_t := 0.0
 var _time := 0.0
 var _anticipate := 0.0
 var _scarf_ready := false
+## Hit stop: the pose locks solid for a few frames on impact while the world
+## keeps moving. Research on game feel is blunt about this one - without it a
+## blow "feels like it is cutting through air". The *position* is never frozen,
+## because position comes from the audio clock (GDD 26 [LOCK]) and stopping it
+## would drift the character off the music. Freezing the pose alone reads as
+## impact and cannot desync anything.
+var _hitstop := 0.0
 
 
 func _ready() -> void:
@@ -304,6 +311,10 @@ func set_state(s: State, g: LaunchController.Grade = LaunchController.Grade.PERF
 	_set_face(_face_for(s, g))
 
 
+func hit_stop(seconds: float) -> void:
+	_hitstop = maxf(_hitstop, seconds)
+
+
 func notify_dash(dir: Vector2i) -> void:
 	_dash_dir = Vector3(float(dir.x), 0.0, -float(dir.y))
 	_dash_t = 0.0
@@ -404,6 +415,11 @@ func _process(delta: float) -> void:
 
 	if state == State.DASH and _dash_t > 0.30:
 		set_state(State.IDLE)
+
+	if _hitstop > 0.0:
+		_hitstop -= dt
+		_apply(dt)          # position and shadow still track; the pose holds
+		return
 
 	_drive(dt)
 	_apply(dt)

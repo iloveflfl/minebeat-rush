@@ -1,4 +1,4 @@
-﻿class_name CameraDirector
+class_name CameraDirector
 extends Node3D
 
 ## GDD 13 - the camera breathes between reading and spectacle.
@@ -10,7 +10,7 @@ extends Node3D
 ##   * during a reading phase, shake is driven to zero and dust is suppressed
 ##     (GDD 13, 23) - a nice explosion must never cover a number (GDD 15.3).
 
-enum View { OPENING, FREE, GROUND, LAUNCH, AIR_RISE, APEX, FALL, LANDING, GLIDE, GATE }
+enum View { OPENING, FREE, ARMED, GROUND, LAUNCH, AIR_RISE, APEX, FALL, LANDING, GLIDE, GATE }
 
 ## height above the deck, distance behind the subject, how far ahead it aims, fov
 ## GROUND and LANDING are recomputed from `frame_depth` so a 3-row sector and a
@@ -22,6 +22,11 @@ const VIEWS := {
 	# then settles into the quasi-top-down roaming view.
 	View.OPENING:   {"h": 6.5,  "back": 17.0, "ahead": 70.0, "fov": 54.0, "snap": 1.1,
 					 "aim_y": 4.0},
+	# GDD 12.2: the charge is live and nothing has happened yet. The camera
+	# closes in and holds, which is the only cut in the game that is allowed to
+	# make the player wait.
+	View.ARMED:     {"h": 2.0,  "back": 4.2,  "ahead": 0.6,  "fov": 44.0, "snap": 2.2,
+					 "aim_y": 1.0},
 	View.FREE:      {"h": 17.0, "back": 9.0,  "ahead": 4.0,  "fov": 50.0, "snap": 3.2},
 	# GDD 13: the reading view is deliberately long-lens. A narrow FOV keeps the
 	# grid big and the perspective distortion low, which is what makes a row of
