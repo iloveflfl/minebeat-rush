@@ -107,8 +107,10 @@ func _params(v: View) -> Dictionary:
 		# Only the distance scales. Scaling the aim point too walked the framing
 		# off the top of the figure as soon as you pulled back far enough to see
 		# all of it - which is exactly when you most need to see all of it.
+		# Aimed at the chest-to-head band, in figure units rather than metres, so
+		# the inspection framing follows the character when its scale changes.
 		return {"h": 0.9 * closeup, "back": 2.6 * closeup, "ahead": 0.0,
-				"fov": 32.0, "snap": 18.0, "aim_y": 1.1}
+				"fov": 32.0, "snap": 18.0, "aim_y": 0.50 * CharacterAnimator.FIGURE_H}
 	var cfg: Dictionary = (VIEWS[v] as Dictionary).duplicate()
 	if v == View.GROUND or v == View.LANDING:
 		# Height and distance are traded against each other deliberately.

@@ -237,9 +237,13 @@ func _capture() -> void:
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	img.save_png("%s/shot_%02d.png" % [_shot_dir, _shot_index])
-	print("captured shot_%02d.png  state=%-7s beat=%.2f  launches=%d glides=%d perfect=%d"
+	# The face parameters go in the log because some of them are almost
+	# invisible in a still - a blink during a happy squint barely changes the
+	# drawing - and "I looked at the frames and did not see it" is not evidence
+	# that a thing is not happening.
+	print("captured shot_%02d.png  state=%-7s beat=%.2f  launches=%d glides=%d perfect=%d  %s"
 			% [_shot_index, State.keys()[state], BeatConductor.beat,
-				_launches, _glides, _perfect])
+				_launches, _glides, _perfect, anim.face_debug()])
 	_shot_index += 1
 
 

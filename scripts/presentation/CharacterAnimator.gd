@@ -62,10 +62,29 @@ var _arms: Array[Node3D] = []
 var _legs: Array[Node3D] = []
 var _tail: Node3D
 var _scarf_ends: Array[Node3D] = []
-var _eyes: Dictionary = {}          ## expression -> Node3D
-var _mouths: Dictionary = {}
 var _shadow: MeshInstance3D
 var _face := "happy"
+
+# --- the face, as parameters rather than as a set of pictures ---------------
+var _eye_sockets: Array[Node3D] = []
+var _eye_pieces: Array[FoxFace.Piece] = []
+var _shine_pieces: Array[FoxFace.Piece] = []
+var _lid_pieces: Array[FoxFace.Piece] = []
+var _mouth_piece: FoxFace.Piece
+## Expression parameters. Each is sprung, so an expression change is a move
+## through the space between two faces rather than a cut between them.
+var _p_open := Spring.new()         ## eye aperture
+var _p_bow := Spring.new()          ## eye centre line arched up: the ^^ squint
+var _p_lid := Spring.new()          ## brow angle, + angry / - worried
+var _p_mopen := Spring.new()        ## jaw
+var _p_smile := Spring.new()        ## mouth corners, + up / - down
+
+# --- involuntary motion ------------------------------------------------------
+var _blink := FoxLife.Blink.new()
+var _gaze := FoxLife.Gaze.new()
+var _breath := FoxLife.Breath.new()
+## Extra look direction supplied by the director, on top of the state's own.
+var _look_hint := Vector2.ZERO
 
 # --- animation channels -----------------------------------------------------
 var _s_lean := Spring.new()
@@ -262,67 +281,21 @@ func _head_build(S: float) -> void:
 	FoxArt.shape(_head, FoxArt.ellipse(Vector2(0, 0.030), Vector2(0.017, 0.012), 14),
 			FoxArt.NOSE, S, Z.NOSE, 0.005)
 
-	# --- expressions: one set of eyes and one mouth per mood ----------------
-	for name in ["happy", "surprised", "determined", "worried"]:
-		var eyes := Node3D.new()
-		_head.add_child(eyes)
-		_eyes[name] = eyes
-		var mouth := Node3D.new()
-		_head.add_child(mouth)
-		_mouths[name] = mouth
-		for sx3 in [-1.0, 1.0]:
-			# Sat well above the muzzle. The reference puts the eyes on the upper
-			# third of the skull, and it is what keeps the face babyish.
-			var at := Vector2(sx3 * 0.058, 0.080)
-			match name:
-				"happy":
-					# Closed and arched with delight: the lower half of an ellipse,
-					# which triangulates to the lens shape between arc and chord.
-					FoxArt.detail(eyes, FoxArt.ellipse(at + Vector2(0, 0.004),
-							Vector2(0.032, 0.026), 22, 200, 340), FoxArt.EYE, S, Z.EYE)
-				"surprised":
-					FoxArt.detail(eyes, FoxArt.ellipse(at, Vector2(0.029, 0.034), 22),
-							FoxArt.EYE, S, Z.EYE)
-					FoxArt.detail(eyes, FoxArt.ellipse(at + Vector2(sx3 * 0.009, 0.012),
-							Vector2(0.010, 0.012), 14), FoxArt.EYE_LIGHT, S, Z.MOUTH)
-				"determined":
-					FoxArt.detail(eyes, FoxArt.ellipse(at, Vector2(0.028, 0.029), 22),
-							FoxArt.EYE, S, Z.EYE)
-					FoxArt.detail(eyes, FoxArt.ellipse(at + Vector2(sx3 * 0.009, 0.010),
-							Vector2(0.009, 0.010), 14), FoxArt.EYE_LIGHT, S, Z.MOUTH)
-					# The angry lid: a fur-coloured disc laid over the top of the eye
-					# and tilted in, so the eye is narrowed rather than redrawn.
-					var brow := FoxArt.ellipse(at + Vector2(0, 0.028),
-							Vector2(0.042, 0.028), 20)
-					var lid := FoxArt.detail(eyes, brow, FoxArt.FUR, S, Z.LID)
-					lid.rotation_degrees.z = sx3 * 22.0
-				"worried":
-					FoxArt.detail(eyes, FoxArt.ellipse(at, Vector2(0.027, 0.031), 22),
-							FoxArt.EYE, S, Z.EYE)
-					FoxArt.detail(eyes, FoxArt.ellipse(at + Vector2(sx3 * 0.008, 0.010),
-							Vector2(0.009, 0.011), 14), FoxArt.EYE_LIGHT, S, Z.MOUTH)
-					var lid2 := FoxArt.detail(eyes, FoxArt.ellipse(
-							at + Vector2(0, 0.030), Vector2(0.040, 0.028), 20),
-							FoxArt.FUR, S, Z.LID)
-					lid2.rotation_degrees.z = -sx3 * 18.0
-		# Mouths sit on the muzzle, under the nose.
-		match name:
-			"happy":
-				FoxArt.shape(mouth, FoxArt.ellipse(Vector2(0, 0.012),
-						Vector2(0.021, 0.019), 22, 190, 350), FoxArt.NOSE.darkened(0.35),
-						S, Z.MOUTH, 0.004)
-			"surprised":
-				FoxArt.shape(mouth, FoxArt.ellipse(Vector2(0, 0.010),
-						Vector2(0.013, 0.015), 18), FoxArt.NOSE.darkened(0.4),
-						S, Z.MOUTH, 0.004)
-			"determined":
-				FoxArt.shape(mouth, FoxArt.limb(Vector2(-0.018, 0.012),
-						Vector2(0.018, 0.012), 0.004, 0.004, 6),
-						FoxArt.EYE, S, Z.MOUTH, 0.0)
-			"worried":
-				FoxArt.shape(mouth, FoxArt.ellipse(Vector2(0, 0.022),
-						Vector2(0.019, 0.016), 22, 10, 170), FoxArt.EYE, S, Z.MOUTH, 0.0)
-	_set_face("happy")
+	# --- the face -----------------------------------------------------------
+	# One eye, one mouth, rebuilt from parameters every frame. There is no set
+	# of expressions here to pick from: an expression is a point in the
+	# parameter space and everything between two of them is a face too.
+	for sx3 in [-1.0, 1.0]:
+		var socket := Node3D.new()
+		# Set high on the skull. The reference puts the eyes on the upper third,
+		# and that is what keeps the face babyish rather than muzzle-forward.
+		socket.position = Vector3(sx3 * 0.058 * S, 0.080 * S, 0)
+		_head.add_child(socket)
+		_eye_pieces.append(FoxFace.Piece.new(socket, FoxArt.EYE, Z.EYE))
+		_shine_pieces.append(FoxFace.Piece.new(socket, FoxArt.EYE_LIGHT, Z.MOUTH))
+		_lid_pieces.append(FoxFace.Piece.new(socket, FoxArt.FUR, Z.LID))
+		_eye_sockets.append(socket)
+	_mouth_piece = FoxFace.Piece.new(_head, FoxArt.NOSE.darkened(0.35), Z.MOUTH, 0.004)
 
 
 func _build_shadow() -> void:
@@ -355,6 +328,12 @@ func set_state(s: State, g: LaunchController.Grade = LaunchController.Grade.PERF
 		# does the same thing" - the one impression the variety is there to
 		# avoid. Picking from the other two guarantees consecutive jumps differ.
 		_variant = (_variant + 1 + randi() % 2) % 3
+		# The eyes go to the new subject immediately, ahead of the body. Gaze
+		# leads action in every animal, and getting that order right is most of
+		# what makes a character look like it decided to move rather than like
+		# it was moved.
+		state = s
+		_gaze.flick_to(_look_where() + _look_hint)
 		if s == State.LAUNCH:
 			_anticipate = 0.08
 	state = s
@@ -390,13 +369,26 @@ func _face_for(s: State, g: LaunchController.Grade) -> String:
 	return "happy"
 
 
+## An expression is five numbers: eye aperture, eye bow, brow angle, jaw, and
+## mouth corners. Naming four points in that space keeps the calling code
+## readable, but nothing stops the face from sitting between them, and springs
+## mean it usually is.
+const FACES := {
+	"happy":      {"open": 0.05, "bow": 0.95, "lid":  0.0, "mopen": 0.42, "smile":  0.90},
+	"surprised":  {"open": 1.00, "bow": 0.00, "lid": -0.15, "mopen": 0.85, "smile":  0.05},
+	"determined": {"open": 0.72, "bow": 0.00, "lid":  1.00, "mopen": 0.06, "smile": -0.20},
+	"worried":    {"open": 0.80, "bow": 0.00, "lid": -1.00, "mopen": 0.18, "smile": -0.75},
+}
+
+
 func _set_face(name: String) -> void:
-	if not _eyes.has(name):
+	if not FACES.has(name):
 		return
+	if name != _face:
+		# Cut on a blink. Animators hide a change of pose behind one because the
+		# eye genuinely cannot see through it, and it costs nothing here.
+		_blink.trigger()
 	_face = name
-	for k in _eyes:
-		(_eyes[k] as Node3D).visible = k == name
-		(_mouths[k] as Node3D).visible = k == name
 
 
 # ---------------------------------------------------------------------------
@@ -597,6 +589,113 @@ func _drive(dt: float) -> void:
 	_s_arm.step(arm, stiff * 0.7, damp, dt)
 	_s_leg.step(leg, stiff * 0.8, damp, dt)
 	_s_asym.step(asym, stiff * 0.55, damp * 0.9, dt)
+	_step_face(dt)
+
+
+## The face, evaluated rather than selected.
+##
+## Two layers compose here without knowing about each other, which is the whole
+## reason for doing it this way. The expression layer says what the character
+## feels; the involuntary layer blinks, looks around and breathes regardless.
+## The eye ends up at the product of the two, so the character can blink while
+## surprised and still be surprised on the far side of the blink - something
+## four prebuilt faces cannot express at any level of effort.
+func _step_face(dt: float) -> void:
+	var f: Dictionary = FACES[_face]
+	# Expression springs. Slower than the body: a face settles into a mood.
+	_p_open.step(float(f["open"]), 220.0, 19.0, dt)
+	_p_bow.step(float(f["bow"]), 200.0, 18.0, dt)
+	_p_lid.step(float(f["lid"]), 190.0, 18.0, dt)
+	_p_mopen.step(float(f["mopen"]), 230.0, 19.0, dt)
+	_p_smile.step(float(f["smile"]), 210.0, 18.0, dt)
+
+	# Arousal drives the blink rate. Startled animals blink more.
+	var arousal := 0.0
+	match state:
+		State.ARMED, State.LAUNCH: arousal = 0.9
+		State.FALL, State.GLIDE: arousal = 1.4
+		State.LAND, State.DASH: arousal = 0.5
+	var lids := _blink.step(dt, arousal)
+	var g := _gaze.step(dt, _look_where() + _look_hint)
+	var br := _breath.step(dt, lerpf(0.32, 0.85, clampf(arousal, 0.0, 1.0)), 1.0)
+
+	# Breathing rides on the torso and never on the head, so the face stays put
+	# while the chest moves - the same reason squash is held off the skull.
+	if _torso:
+		var d := br * (0.014 if state == State.IDLE else 0.008)
+		_torso.scale = Vector3(1.0 - d * 0.45, 1.0 + d, 1.0)
+
+	var S := FIGURE_H
+	var open: float = clampf(_p_open.v, 0.0, 1.2) * lids
+	var bow: float = _p_bow.v * (0.35 + 0.65 * lids)
+	for i in _eye_pieces.size():
+		var sx := -1.0 if i == 0 else 1.0
+		# The eye itself does not move; the gaze moves what is inside it, plus a
+		# few tenths of a millimetre of the eye. Sliding the whole eye around the
+		# face is the classic tell of a look-at bolted onto a rig.
+		var at := Vector2(g.x * 0.004, g.y * 0.003)
+		var eye_poly := FoxFace.eye(at, FoxFace.EYE_W, FoxFace.EYE_H, open, bow)
+		_eye_pieces[i].draw(eye_poly, PackedVector2Array(), S)
+		# The catchlight is what the gaze is actually readable through.
+		var shine_open: float = clampf((open - 0.35) / 0.65, 0.0, 1.0)
+		var shine := FoxFace.lid(at + Vector2(sx * 0.010 + g.x * 0.013,
+				0.010 + g.y * 0.010), 0.010 * shine_open, 0.011 * shine_open)
+		_shine_pieces[i].draw(shine if shine_open > 0.02 else PackedVector2Array(),
+				PackedVector2Array(), S)
+		# The brow: a fur disc dropped over the top of the eye and tilted. Angry
+		# tilts the inner end down, worried tilts the outer end down, and the one
+		# parameter covers both because they are the same motion mirrored.
+		# The brow is placed against the eye's current top rather than at a fixed
+		# height. It has to clear an arched happy squint - which reaches much
+		# higher than a flat open eye - and then dip into the eye by a real
+		# amount when the expression calls for a narrowed one.
+		var lv := _p_lid.v
+		const LID_RY := 0.030
+		var rest := FoxFace.eye_top(open, bow) + LID_RY + 0.010
+		_lid_pieces[i].node.rotation_degrees.z = sx * lv * 24.0
+		_lid_pieces[i].draw(
+				FoxFace.lid(Vector2(0, rest - 0.036 * absf(lv)), 0.044, LID_RY),
+				PackedVector2Array(), S)
+
+	if _mouth_piece:
+		var mo: float = _p_mopen.v
+		var sm: float = _p_smile.v
+		var mp := FoxFace.mouth(Vector2(0, 0.003), 0.040, 0.034, mo, sm)
+		var mo_ink := FoxFace.mouth(Vector2(0, 0.003), 0.040, 0.034, mo, sm, 0.004)
+		_mouth_piece.draw(mp, mo_ink, S)
+
+
+## What the character has reason to be looking at right now.
+##
+## A gaze that only wanders is better than a stare, but it reads as vacant - the
+## eyes are moving and nothing is behind them. What makes a character look aware
+## is that its eyes are on the thing the situation is about: the board while it
+## is reading one, the sky on the way up, the deck rushing at it on the way
+## down. The player never consciously notices this and always feels it.
+func _look_where() -> Vector2:
+	match state:
+		State.IDLE: return Vector2(0.0, -0.42)      # reading the row of clues
+		State.ARMED: return Vector2(0.0, -0.20)     # down at its own feet
+		State.DASH: return Vector2(_dash_dir.x * 0.85, -0.25)
+		State.LAUNCH: return Vector2(0.0, 0.62)
+		State.APEX: return Vector2(0.0, 0.30)
+		State.FALL: return Vector2(0.0, -0.78)      # at the deck coming up
+		State.GLIDE: return Vector2(0.0, -0.92)
+		State.LAND: return Vector2(0.0, -0.35)
+		State.CHEER: return Vector2(0.0, 0.45)
+	return Vector2.ZERO
+
+
+## An extra bias the director can add - toward the cell being aimed at, or the
+## gate. Added to the state's own direction rather than replacing it.
+func look_at_offset(p: Vector2) -> void:
+	_look_hint = p.limit_length(0.8)
+
+
+## One-line readout of the involuntary layer, for capture runs.
+func face_debug() -> String:
+	return "face=%-10s lids=%.2f gaze=%+.2f,%+.2f breath=%+.2f" % [
+			_face, _blink.openness, _gaze.offset.x, _gaze.offset.y, _breath.value]
 
 
 func _apply(dt: float) -> void:
