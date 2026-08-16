@@ -104,13 +104,26 @@ var closeup := 0.0
 
 func _params(v: View) -> Dictionary:
 	if closeup > 0.0:
+		# Only the distance scales. Scaling the aim point too walked the framing
+		# off the top of the figure as soon as you pulled back far enough to see
+		# all of it - which is exactly when you most need to see all of it.
 		return {"h": 0.9 * closeup, "back": 2.6 * closeup, "ahead": 0.0,
-				"fov": 32.0, "snap": 18.0, "aim_y": 1.1 * closeup}
+				"fov": 32.0, "snap": 18.0, "aim_y": 1.1}
 	var cfg: Dictionary = (VIEWS[v] as Dictionary).duplicate()
 	if v == View.GROUND or v == View.LANDING:
-		cfg["h"] = 10.5 + frame_depth * 0.26
-		cfg["back"] = 7.0 + frame_depth * 0.18
-		cfg["ahead"] = frame_depth * 0.52
+		# Height and distance are traded against each other deliberately.
+		#
+		# A vertical figure loses cos(pitch) of its screen height, so the old
+		# near-top-down framing - high up, close in - squashed the character to
+		# about sixty pixels at 720p however well it was drawn. Standing further
+		# back and lower keeps the same board in frame at a shallower angle, and
+		# the figure comes back to roughly half again its height. The board only
+		# foreshortens from about 0.83 to 0.72 of its depth, which is well short
+		# of where rows stop being separable (GDD 27.1).
+		cfg["h"] = 9.6 + frame_depth * 0.21
+		cfg["back"] = 8.2 + frame_depth * 0.27
+		cfg["ahead"] = frame_depth * 0.44
+		cfg["fov"] = 38.0
 	return cfg
 
 

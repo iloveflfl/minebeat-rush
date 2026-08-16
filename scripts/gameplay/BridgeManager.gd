@@ -108,7 +108,15 @@ func _build_canyon() -> void:
 	var near_rock := Greybox.mat(Greybox.C_ROCK_NEAR)
 	var mid_rock := Greybox.mat(Greybox.C_ROCK_MID)
 	var far_rock := Greybox.mat(Greybox.C_ROCK_FAR)
-	var floor_mat := Greybox.mat(Color(0.86, 0.78, 0.58))
+	# Muted well below the deck and pulled toward the far-rock violet.
+	#
+	# This slab is 560 m wide and unlit-flat, and the reading camera points down
+	# at it, so it is the single largest block of colour on screen during play.
+	# At a warm 0.86/0.78/0.58 it was a shade off the deck's own sand and filled
+	# a third of the frame with it - the background competing with the play
+	# surface, which is exactly what the art direction in Greybox forbids.
+	var floor_mat := Greybox.mat(
+			Color(0.86, 0.78, 0.58).lerp(Greybox.C_ROCK_FAR, 0.45).darkened(0.12))
 	var water := Greybox.mat(Greybox.C_WATER, 1.0, 0.0, 0.22)
 	var leaf := Greybox.mat(Greybox.C_LEAF)
 	var leaf_dark := Greybox.mat(Greybox.C_LEAF_DARK)

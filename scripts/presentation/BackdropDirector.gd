@@ -106,9 +106,19 @@ func _push_palette(f: float) -> void:
 		# Below the horizon stays the pale far-rock violet: that half of the dome
 		# is what the reading camera actually looks at, and it has to read as
 		# depth haze rather than as sky.
-		var haze: Color = Greybox.C_ROCK_FAR.lerp(hor, 0.45)
-		sky_mat.ground_horizon_color = haze.lightened(0.3)
-		sky_mat.ground_bottom_color = haze.lightened(0.1)
+		# Only a fifth of the way toward the warm horizon, so the ground half of
+		# the dome stays the cool far-rock violet. At 0.45 it took most of the
+		# horizon's yellow and the reading camera - which points down, and so
+		# sees mostly this - filled a third of the frame with a colour a shade
+		# off the board's own.
+		var haze: Color = Greybox.C_ROCK_FAR.lerp(hor, 0.20)
+		# Darker and cooler going down, not lighter. Lightening it made the lower
+		# dome a near-white wash that filled a third of the reading view with one
+		# flat value and competed with the board for attention - the opposite of
+		# what a background is for. Receding into shadow reads as distance and
+		# leaves the saturated play space as the brightest thing on screen.
+		sky_mat.ground_horizon_color = haze.lightened(0.08)
+		sky_mat.ground_bottom_color = haze.lerp(Greybox.C_ROCK_FAR, 0.6).darkened(0.14)
 	if env:
 		env.fog_light_color = hor.lerp(Greybox.C_ROCK_FAR, 0.45)
 		env.ambient_light_color = hor.lerp(Color(0.6, 0.7, 1.0), 0.45)

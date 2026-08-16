@@ -1,36 +1,39 @@
 class_name CharacterAnimator
 extends Node3D
 
-## GDD 14 - the fennec, done the way Paper Mario does a character: the painted
-## drawing itself, standing up in the 3D world, jointed so it can act.
+## GDD 14 - the fennec: a drawn character, jointed, standing up in the 3D world.
 ##
-## The art is the concept sheet, cut into pieces by tools/make_sprites.py:
-## body, head (four expressions on one shared canvas) and the two ears. They are
-## flat quads parented into a chain - ears hang off the head, the head hangs off
-## the body - and everything animates in the character's own 2D plane. That is
-## the whole trick: it stays a drawing from every angle the camera can take
-## (which is only ever one, because CameraDirector never yaws), while still
-## being able to lean, stretch, tilt its head and fan its ears.
+## The concept sheet is reference. The character itself is *drawn here*, out of
+## closed vector shapes (see FoxArt), because every attempt to slice the sheet
+## into moving parts failed the same way: a cut through a picture leaves a
+## straight edge, and whatever the cut concealed does not exist. Rotate a cut-out
+## ear and the head has a hole. Sink the head to hide the hole and the neck reads
+## as severed. Hide the cut by clamping the joint and you have concealment rather
+## than a rig.
 ##
-## Two things a single flat sprite could not do, and the reason for the joints:
-##   * hold a real pose at the apex, which is the moment the whole jump exists
-##     to show
-##   * carry follow-through - the ears and the head lag behind the body, which
-##     is what makes a drawing feel like it has weight (GDD 14.2 [LOCK]: the
-##     secondary channels only ever follow, they never drive the pose)
+## Rebuilt as shapes, none of that can happen: parts overlap instead of abutting,
+## every piece carries its own ink outline all the way round, and a joint can
+## travel as far as the pose asks. It also finally buys real arms, legs and a
+## tail, which is what "the pose is always the same" was really about.
+##
+## Motion is springs, not lerps - a lerp arrives and stops, a spring overshoots
+## and settles, and that is what reads as weight. On top of the authored poses
+## sit the follow-through channels, and per GDD 14.2 [LOCK] those only ever
+## follow: they never drive the pose or the cell the player stands on.
 
 enum State { IDLE, DASH, ARMED, LAUNCH, APEX, FALL, LAND, GLIDE, CHEER }
 
-const SPRITES := "res://assets/sprites/"
-## Height of the whole character, in metres, against a 2 m tile.
-const FIGURE_H := 2.35
-## How far the head's chin sinks into the body's collar, as a fraction of the
-## head's height. Hides the joint.
-## The head plate ends in the painted collar and the body plate begins with one.
-## Sinking the head this far in lands red on red, so the join never shows.
-const NECK_OVERLAP := 0.05
-const SCARF_SEGMENTS := 9
-const SCARF_LEN := 0.17
+## Scale of the drawing in metres, against a 2 m tile.
+##
+## Not the character's actual height: the art is laid out over a unit box and
+## only fills the top three quarters of it, so the figure stands about 0.78 of
+## this. At 2.30 that came to 1.8 m, and on a five-wide board the reading camera
+## has to frame ten metres - which left the fennec sixty pixels tall at 720p no
+## matter how well it was drawn. Scaled up it reads at playing distance, and
+## being taller than one tile is normal for the genre rather than a collision
+## problem: the rig has no collider, and its ground height comes from the cell
+## it stands on.
+const FIGURE_H := 2.95
 
 
 class Spring:
@@ -48,36 +51,45 @@ class Spring:
 var state: State = State.IDLE
 var grade: LaunchController.Grade = LaunchController.Grade.PERFECT
 
+# --- rig --------------------------------------------------------------------
 var _rig: Node3D
-var _body: Node3D
+var _hips: Node3D
+var _torso: Node3D
 var _neck: Node3D
 var _head: Node3D
-var _head_quad: Node3D
-var _head_mat: StandardMaterial3D
 var _ears: Array[Node3D] = []
+var _arms: Array[Node3D] = []
+var _legs: Array[Node3D] = []
+var _tail: Node3D
+var _scarf_ends: Array[Node3D] = []
+var _eyes: Dictionary = {}          ## expression -> Node3D
+var _mouths: Dictionary = {}
 var _shadow: MeshInstance3D
-var _scarf: Array[MeshInstance3D] = []
-var _scarf_p := PackedVector3Array()
-var _scarf_prev := PackedVector3Array()
-
-var _tex: Dictionary = {}
-var _meta: Dictionary = {}
-var _rig_meta: Dictionary = {}
-var _px := 0.004
+var _face := "happy"
 
 # --- animation channels -----------------------------------------------------
-var _s_lean := Spring.new()        ## whole-body roll, degrees
-var _s_squash := Spring.new()      ## +1 tall and thin, -1 short and wide
-var _s_rise := Spring.new()        ## body lifts off its feet
-var _s_head := Spring.new()        ## head tilt
-var _s_ear := Spring.new()         ## +1 straight up, -1 swept back
-var _s_fan := Spring.new()         ## ears splayed outward
+var _s_lean := Spring.new()
+var _s_squash := Spring.new()
+var _s_rise := Spring.new()
+var _s_head := Spring.new()
+var _s_ear := Spring.new()          ## +1 straight up, -1 swept back
+var _s_fan := Spring.new()          ## ears splayed outward
+var _s_arm := Spring.new()          ## -1 back, 0 rest, +1 up and out
+var _s_leg := Spring.new()          ## 0 straight, 1 tucked
+## Asymmetry, in degrees, added to one side and subtracted from the other.
+##
+## Everything else in the rig is mirrored, and a perfectly mirrored figure looks
+## the same in every pose no matter what the other channels do - which is what
+## made three different apex "takes" read as one pose with three faces. Breaking
+## the mirror is what turns a shape into a pose.
+var _s_asym := Spring.new()
 var _ear_lag := [Spring.new(), Spring.new()]
+var _tail_lag := Spring.new()
 var _head_lag := Spring.new()
 
 var _facing := 1.0
 var _want_facing := 1.0
-var _pinch := 1.0                  ## the paper turn: 1 face-on, 0 edge-on
+var _pinch := 1.0
 var _prev_global := Vector3.ZERO
 var _velocity := Vector3.ZERO
 var _dash_dir := Vector3.ZERO
@@ -85,179 +97,242 @@ var _dash_t := 99.0
 var _state_t := 0.0
 var _time := 0.0
 var _anticipate := 0.0
-var _scarf_ready := false
-## Hit stop: the pose locks solid for a few frames on impact while the world
-## keeps moving. Research on game feel is blunt about this one - without it a
-## blow "feels like it is cutting through air". The *position* is never frozen,
-## because position comes from the audio clock (GDD 26 [LOCK]) and stopping it
-## would drift the character off the music. Freezing the pose alone reads as
-## impact and cannot desync anything.
 var _hitstop := 0.0
+var _variant := 0
+var _idle_beat := 0.0
+var _flick := 0.0
 
 
 func _ready() -> void:
-	_load_art()
 	_build()
 	_prev_global = global_position
+	_s_ear.snap(1.0)
 
 
-func _load_art() -> void:
-	var f := FileAccess.open(SPRITES + "sprites.json", FileAccess.READ)
-	if f:
-		var parsed: Variant = JSON.parse_string(f.get_as_text())
-		f.close()
-		if parsed is Dictionary:
-			_meta = (parsed as Dictionary).get("parts", {})
-			_rig_meta = (parsed as Dictionary).get("rig", {})
-	for n in ["body_front", "body_quarter", "body_side", "body_back", "rig_ear_l", "rig_ear_r",
-			"rig_head_happy", "rig_head_surprised",
-			"rig_head_determined", "rig_head_worried"]:
-		var p: String = SPRITES + str(n) + ".png"
-		if ResourceLoader.exists(p):
-			_tex[n] = load(p)
-
-	# One scale for every piece, so the cut-out reassembles at exactly the
-	# proportions it was drawn at.
-	var body_h := float((_meta.get("body_front", {}) as Dictionary).get("h", 309))
-	var head_h := float((_meta.get("rig_head_happy", {}) as Dictionary).get("h", 247))
-	# The head plate carries its own ears now, so the figure is body plus head -
-	# adding the ear piece again would count them twice and shrink everything.
-	var stack := body_h + head_h * (1.0 - NECK_OVERLAP)
-	_px = FIGURE_H / maxf(1.0, stack)
-
-
-const PAPER_EDGE := preload("res://shaders/paper_edge.gdshader")
-## How far the card sticks out past the drawing, as a fraction of the piece.
-const EDGE_GROW := 0.0
-## How far the card sits behind the drawing. Enough to catch the light as a
-## separate surface, small enough that the piece still reads as one object.
-const EDGE_DEPTH := 0.020
-
-
-## One cut-out piece: the drawing, plus the card it was cut from.
-##
-## The card is the same silhouette in paper stock, a little larger and a little
-## behind. That white rim is what makes a piece read as *paper* rather than as a
-## sprite, and it is why the ears stopped looking severed - a cut edge is
-## supposed to be visible, it just has to be visibly card.
-func _paper(tex: Texture2D, size: Vector2) -> Node3D:
-	var holder := Node3D.new()
-
-	# The white card is off. Paper Mario needs it because its art has no drawn
-	# outline of its own - the card *is* the line. This artwork already carries a
-	# heavy black ink outline, so the card had nothing to add and plenty to break:
-	# it grew past the plate's hidden bottom edge and drew a pale seam across the
-	# character's collar. The drawn outline does the job the card was hired for.
-	if EDGE_GROW > 0.0:
-		var back := MeshInstance3D.new()
-		var bq := QuadMesh.new()
-		bq.size = size * (1.0 + EDGE_GROW)
-		back.mesh = bq
-		var bm := ShaderMaterial.new()
-		bm.shader = PAPER_EDGE
-		bm.set_shader_parameter("shape", tex)
-		bm.set_shader_parameter("paper_color", Color(1.0, 0.97, 0.90))
-		back.material_override = bm
-		back.position = Vector3(0, 0, -EDGE_DEPTH)
-		back.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		holder.add_child(back)
-
-	var m := StandardMaterial3D.new()
-	m.albedo_texture = tex
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-	m.alpha_scissor_threshold = 0.5
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	var q := QuadMesh.new()
-	q.size = size
-	var art := MeshInstance3D.new()
-	art.name = "Art"
-	art.mesh = q
-	art.material_override = m
-	art.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	holder.add_child(art)
-	return holder
-
-
-func _art_of(piece: Node3D) -> MeshInstance3D:
-	return piece.get_node("Art") as MeshInstance3D
-
-
-func _size_of(name: String) -> Vector2:
-	var d: Dictionary = _meta.get(name, {})
-	return Vector2(float(d.get("w", 100)), float(d.get("h", 100))) * _px
-
+# ---------------------------------------------------------------------------
+# construction - proportions measured off the concept sheet
+# ---------------------------------------------------------------------------
 
 func _build() -> void:
+	var S := FIGURE_H
+
 	_rig = Node3D.new()
 	_rig.name = "Rig"
 	add_child(_rig)
 
-	# --- body: origin at the feet -------------------------------------------
-	var bs := _size_of("body_front")
-	_body = _paper(_tex.get("body_front"), bs)
-	_body.position = Vector3(0, bs.y * 0.5, 0)
-	_rig.add_child(_body)
+	_hips = Node3D.new()
+	_hips.position = Vector3(0, 0.17 * S, 0)
+	_rig.add_child(_hips)
 
-	# --- head, sunk into the collar so the joint never shows -----------------
-	var hs := _size_of("rig_head_happy")
+	# --- legs ---------------------------------------------------------------
+	for sx in [-1.0, 1.0]:
+		var leg := Node3D.new()
+		# Set wider apart than their own radius. Closer together than that, the two
+		# outlines cross in the crotch and the legs read as a drawn X.
+		leg.position = Vector3(sx * 0.066 * S, 0, 0)
+		_hips.add_child(leg)
+		FoxArt.shape(leg, FoxArt.limb(Vector2(0, 0), Vector2(0, -0.148), 0.043, 0.036),
+				FoxArt.FUR, S, -0.004)
+		FoxArt.shape(leg, FoxArt.ellipse(Vector2(0, -0.162), Vector2(0.050, 0.028), 18),
+				FoxArt.BELLY, S, -0.003)
+		_legs.append(leg)
+
+	# --- tail ----------------------------------------------------------------
+	# Anchored at the hips and drawn first, so it sweeps out from behind the
+	# body. Hung off the torso it rode up to shoulder height and read as a
+	# balloon on a string.
+	_tail = Node3D.new()
+	_tail.position = Vector3(0.058 * S, 0.020 * S, -0.020)
+	_hips.add_child(_tail)
+	# Thick at the root and barely tapering: a fennec's tail is a brush. Drawn
+	# as a thin stem with a round tip on the end it read as a lollipop.
+	FoxArt.shape(_tail, FoxArt.sweep(Vector2(0, 0), Vector2(0.130, -0.010),
+			Vector2(0.185, 0.120), 0.054, 0.082), FoxArt.FUR, S, 0.0)
+	# The tip is a rounded cap that swallows the whole end of the brush. Drawn
+	# smaller it sat on the tail like a ball on a stick, and its outline crossed
+	# the fur in a straight line that read as a cut.
+	FoxArt.detail(_tail, FoxArt.blob(Vector2(0.183, 0.122), Vector2(0.086, 0.080), 30,
+			0, 0.0, 0.0), FoxArt.TAIL_TIP, S, 0.001)
+
+	# --- torso ---------------------------------------------------------------
+	_torso = Node3D.new()
+	_hips.add_child(_torso)
+	FoxArt.shape(_torso, FoxArt.blob(Vector2(0, 0.115), Vector2(0.105, 0.135), 44),
+			FoxArt.FUR, S, 0.0)
+	FoxArt.detail(_torso, FoxArt.ellipse(Vector2(0, 0.090), Vector2(0.068, 0.098), 26),
+			FoxArt.BELLY, S, 0.002)
+
+	# --- scarf: a band at the throat with two short tails on the chest -------
+	# The tails used to run the whole height of the torso, which stopped reading
+	# as a scarf and started reading as an open red jacket.
+	for sx3 in [-1.0, 1.0]:
+		var end := Node3D.new()
+		end.position = Vector3(sx3 * 0.034 * S, 0.252 * S, 0)
+		_torso.add_child(end)
+		FoxArt.shape(end, FoxArt.sweep(Vector2(0, 0), Vector2(sx3 * 0.022, -0.055),
+				Vector2(sx3 * 0.020, -0.112), 0.026, 0.016),
+				FoxArt.SCARF, S, 0.006)
+		_scarf_ends.append(end)
+	FoxArt.shape(_torso, FoxArt.blob(Vector2(0, 0.265), Vector2(0.098, 0.040), 30),
+			FoxArt.SCARF, S, 0.008)
+	FoxArt.detail(_torso, FoxArt.ellipse(Vector2(0, 0.252), Vector2(0.079, 0.019), 20),
+			FoxArt.SCARF_DARK, S, 0.009)
+
+	# --- arms ----------------------------------------------------------------
+	# In front of the scarf tails. Behind them the arms were completely hidden,
+	# and the figure looked armless in every shot.
+	for sx2 in [-1.0, 1.0]:
+		var arm := Node3D.new()
+		# The shoulder pivot has to sit *inside* the torso outline. Anchored out
+		# at the silhouette's edge it looked fine hanging down and tore open a
+		# gap the moment the arm swung out - the limb read as detached.
+		arm.position = Vector3(sx2 * 0.070 * S, 0.188 * S, 0)
+		_torso.add_child(arm)
+		FoxArt.shape(arm, FoxArt.limb(Vector2(0, 0), Vector2(0, -0.088), 0.030, 0.034),
+				FoxArt.FUR, S, 0.012)
+		_arms.append(arm)
+
+	# --- head ----------------------------------------------------------------
+	# Sits well in front of everything on the body. Depth here is draw order, and
+	# without the gap the scarf band paints straight over the face.
 	_neck = Node3D.new()
-	_neck.position = Vector3(0, bs.y - hs.y * NECK_OVERLAP, 0.004)
-	_rig.add_child(_neck)
-
+	_neck.position = Vector3(0, 0.375 * S, 0.030)
+	_torso.add_child(_neck)
 	_head = Node3D.new()
-	_neck.add_child(_head)
-	_head_quad = _paper(_tex.get("rig_head_happy"), hs)
-	_head_quad.position = Vector3(0, hs.y * 0.5, 0)
-	_head_mat = _art_of(_head_quad).material_override as StandardMaterial3D
-	_head.add_child(_head_quad)
-
-	# --- ears, pivoting on their own bases ----------------------------------
-	# The pivots come out of the cutting tool in source-image pixels, so they
-	# land exactly where the ears were drawn rather than being eyeballed here.
-	var frame: Dictionary = _rig_meta.get("_frame", {})
-	var fw: float = float(frame.get("head_w", 288))
-	# No separate ear pieces. See _follow_through for why: they doubled the
-	# painted ears the moment they moved.
-	for side in []:
-		var key: String = "rig_ear_" + str(side)
-		var es := _size_of(key)
-		var pm: Dictionary = _rig_meta.get(key, {})
-		# Placed exactly where the ear was painted. The cutting tool reports the
-		# pivot on the same shared canvas as the head plate, so this is a
-		# measurement rather than a fraction that has to be eyeballed.
-		# In front of the plate, because the articulated ear is covering the
-		# painted one underneath it (see make_sprites.cut_rig_parts).
-		var frame_h := float(frame.get("head_h", 267))
-		var pivot := Node3D.new()
-		pivot.position = Vector3(
-			(float(pm.get("pivot_x", fw * 0.5)) - fw * 0.5) * _px,
-			(frame_h - float(pm.get("pivot_y", frame_h * 0.44))) * _px - hs.y * 0.5,
-			0.006)
-		_head.add_child(pivot)
-		var quad: Node3D = _paper(_tex.get(key), es)
-		quad.position = Vector3(0, es.y * 0.5, 0)
-		pivot.add_child(quad)
-		_ears.append(pivot)
+	_head_build(S)
 
 	_build_shadow()
-	# No simulated ribbon any more. The scarf is *painted* - it is part of the
-	# body and head plates, with its own outline and shading - and an untextured
-	# red box chain flying across that artwork looked exactly like what it was.
-	# Anything the ribbon was carrying (speed, the glide) is now carried by the
-	# poses and by the body-art swap.
-	_s_ear.snap(1.0)
+
+
+## Draw order inside the head.
+##
+## These are painter's order, not anatomy, and getting them wrong is subtle in a
+## way that costs whole iterations: at one point the scarf band was painting
+## straight across the face, and the eyes were buried a thousandth of a unit
+## behind the muzzle - both looked like modelling mistakes and neither was one.
+## Naming the layers makes the stacking something you can read off the file.
+class Z:
+	const EAR := -0.010
+	const SKULL := 0.000
+	const BLUSH := 0.004
+	const MUZZLE := 0.006
+	const EYE := 0.010
+	const MOUTH := 0.011
+	const LID := 0.013
+	const NOSE := 0.014
+	## Centre of the skull in head-local units, so the face can be laid out
+	## relative to it instead of by trial and error.
+	const skull_y := 0.055
+
+
+func _head_build(S: float) -> void:
+	_neck.add_child(_head)
+
+	# Ears first so they sit behind the skull - the head's own outline then
+	# closes over where they meet it, which is how a drawing hides a joint.
+	# Ears are nearly half the animal on the reference, and almost as wide as the
+	# skull. They go in first so the skull's outline closes over their roots.
+	for sx in [-1.0, 1.0]:
+		var ear := Node3D.new()
+		ear.position = Vector3(sx * 0.078 * S, 0.062 * S, Z.EAR)
+		_head.add_child(ear)
+		# A fennec's ears are broad and splayed, not tall and parallel. At 0.47
+		# high and 0.175 wide they stood straight up like a rabbit's.
+		FoxArt.shape(ear, FoxArt.teardrop(Vector2(0, -0.055), 0.210, 0.345),
+				FoxArt.FUR, S, 0.0)
+		FoxArt.detail(ear, FoxArt.teardrop(Vector2(0, -0.020), 0.122, 0.272),
+				FoxArt.EAR_INNER, S, 0.002)
+		FoxArt.detail(ear, FoxArt.teardrop(Vector2(0, 0.008), 0.064, 0.196),
+				FoxArt.EAR_DEEP, S, 0.003)
+		ear.rotation_degrees.z = -sx * 15.0
+		_ears.append(ear)
+
+	# Skull. The tufts are a gentle waver in the outline, not scallops - at 40
+	# segments against 11 bumps the two frequencies beat against each other and
+	# the head came out faceted, like something chipped from stone.
+	FoxArt.shape(_head, FoxArt.blob(Vector2(0, Z.skull_y), Vector2(0.145, 0.134), 72, 9,
+			0.026, 0.55), FoxArt.FUR, S, Z.SKULL)
+	for sx2 in [-1.0, 1.0]:
+		FoxArt.detail(_head, FoxArt.ellipse(Vector2(sx2 * 0.098, 0.022),
+				Vector2(0.030, 0.017), 16), FoxArt.BLUSH, S, Z.BLUSH)
+	# The muzzle is a small pale wedge low on the face. Drawn any larger it stops
+	# reading as a snout and becomes a mask over the whole head.
+	FoxArt.detail(_head, FoxArt.ellipse(Vector2(0, 0.006), Vector2(0.068, 0.046), 28),
+			FoxArt.BELLY, S, Z.MUZZLE)
+	FoxArt.shape(_head, FoxArt.ellipse(Vector2(0, 0.030), Vector2(0.017, 0.012), 14),
+			FoxArt.NOSE, S, Z.NOSE, 0.005)
+
+	# --- expressions: one set of eyes and one mouth per mood ----------------
+	for name in ["happy", "surprised", "determined", "worried"]:
+		var eyes := Node3D.new()
+		_head.add_child(eyes)
+		_eyes[name] = eyes
+		var mouth := Node3D.new()
+		_head.add_child(mouth)
+		_mouths[name] = mouth
+		for sx3 in [-1.0, 1.0]:
+			# Sat well above the muzzle. The reference puts the eyes on the upper
+			# third of the skull, and it is what keeps the face babyish.
+			var at := Vector2(sx3 * 0.058, 0.080)
+			match name:
+				"happy":
+					# Closed and arched with delight: the lower half of an ellipse,
+					# which triangulates to the lens shape between arc and chord.
+					FoxArt.detail(eyes, FoxArt.ellipse(at + Vector2(0, 0.004),
+							Vector2(0.032, 0.026), 22, 200, 340), FoxArt.EYE, S, Z.EYE)
+				"surprised":
+					FoxArt.detail(eyes, FoxArt.ellipse(at, Vector2(0.029, 0.034), 22),
+							FoxArt.EYE, S, Z.EYE)
+					FoxArt.detail(eyes, FoxArt.ellipse(at + Vector2(sx3 * 0.009, 0.012),
+							Vector2(0.010, 0.012), 14), FoxArt.EYE_LIGHT, S, Z.MOUTH)
+				"determined":
+					FoxArt.detail(eyes, FoxArt.ellipse(at, Vector2(0.028, 0.029), 22),
+							FoxArt.EYE, S, Z.EYE)
+					FoxArt.detail(eyes, FoxArt.ellipse(at + Vector2(sx3 * 0.009, 0.010),
+							Vector2(0.009, 0.010), 14), FoxArt.EYE_LIGHT, S, Z.MOUTH)
+					# The angry lid: a fur-coloured disc laid over the top of the eye
+					# and tilted in, so the eye is narrowed rather than redrawn.
+					var brow := FoxArt.ellipse(at + Vector2(0, 0.028),
+							Vector2(0.042, 0.028), 20)
+					var lid := FoxArt.detail(eyes, brow, FoxArt.FUR, S, Z.LID)
+					lid.rotation_degrees.z = sx3 * 22.0
+				"worried":
+					FoxArt.detail(eyes, FoxArt.ellipse(at, Vector2(0.027, 0.031), 22),
+							FoxArt.EYE, S, Z.EYE)
+					FoxArt.detail(eyes, FoxArt.ellipse(at + Vector2(sx3 * 0.008, 0.010),
+							Vector2(0.009, 0.011), 14), FoxArt.EYE_LIGHT, S, Z.MOUTH)
+					var lid2 := FoxArt.detail(eyes, FoxArt.ellipse(
+							at + Vector2(0, 0.030), Vector2(0.040, 0.028), 20),
+							FoxArt.FUR, S, Z.LID)
+					lid2.rotation_degrees.z = -sx3 * 18.0
+		# Mouths sit on the muzzle, under the nose.
+		match name:
+			"happy":
+				FoxArt.shape(mouth, FoxArt.ellipse(Vector2(0, 0.012),
+						Vector2(0.021, 0.019), 22, 190, 350), FoxArt.NOSE.darkened(0.35),
+						S, Z.MOUTH, 0.004)
+			"surprised":
+				FoxArt.shape(mouth, FoxArt.ellipse(Vector2(0, 0.010),
+						Vector2(0.013, 0.015), 18), FoxArt.NOSE.darkened(0.4),
+						S, Z.MOUTH, 0.004)
+			"determined":
+				FoxArt.shape(mouth, FoxArt.limb(Vector2(-0.018, 0.012),
+						Vector2(0.018, 0.012), 0.004, 0.004, 6),
+						FoxArt.EYE, S, Z.MOUTH, 0.0)
+			"worried":
+				FoxArt.shape(mouth, FoxArt.ellipse(Vector2(0, 0.022),
+						Vector2(0.019, 0.016), 22, 10, 170), FoxArt.EYE, S, Z.MOUTH, 0.0)
+	_set_face("happy")
 
 
 func _build_shadow() -> void:
 	var sm := StandardMaterial3D.new()
-	sm.albedo_color = Color(0.26, 0.17, 0.24, 0.34)
+	sm.albedo_color = Color(0.26, 0.17, 0.24, 0.32)
 	sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var disc := CylinderMesh.new()
-	disc.top_radius = 0.40
-	disc.bottom_radius = 0.40
+	disc.top_radius = 0.42
+	disc.bottom_radius = 0.42
 	disc.height = 0.02
 	disc.radial_segments = 18
 	_shadow = MeshInstance3D.new()
@@ -268,48 +343,22 @@ func _build_shadow() -> void:
 	add_child(_shadow)
 
 
-func _build_scarf() -> void:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = Greybox.C_SCARF
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	for i in SCARF_SEGMENTS:
-		var w := lerpf(0.20, 0.07, float(i) / float(SCARF_SEGMENTS))
-		var seg := MeshInstance3D.new()
-		var b := BoxMesh.new()
-		b.size = Vector3(w, 0.05, SCARF_LEN)
-		seg.mesh = b
-		seg.material_override = m
-		seg.top_level = true
-		seg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(seg)
-		_scarf.append(seg)
-		_scarf_p.append(Vector3.ZERO)
-		_scarf_prev.append(Vector3.ZERO)
-
-
 # ---------------------------------------------------------------------------
 # state
 # ---------------------------------------------------------------------------
 
-## Every entry into a state picks a different take on it. A character that hits
-## the identical pose 44 times in a row stops reading as a performance, which is
-## the single loudest thing separating a rig that "works" from one that is alive.
-var _variant := 0
-var _idle_beat := 0.0
-var _flick := 0.0
-
-
 func set_state(s: State, g: LaunchController.Grade = LaunchController.Grade.PERFECT) -> void:
 	if s != state:
 		_state_t = 0.0
-		_variant = randi() % 3
-		# GDD 7.2 step 1: wind up before anything explosive.
+		# Never the same take twice running. A uniform draw repeats a third of
+		# the time, and a repeat is exactly what the player reads as "it always
+		# does the same thing" - the one impression the variety is there to
+		# avoid. Picking from the other two guarantees consecutive jumps differ.
+		_variant = (_variant + 1 + randi() % 2) % 3
 		if s == State.LAUNCH:
 			_anticipate = 0.08
 	state = s
 	grade = g
-	_set_body(_body_for(s))
 	_set_face(_face_for(s, g))
 
 
@@ -330,8 +379,6 @@ func _face_for(s: State, g: LaunchController.Grade) -> String:
 		State.ARMED: return "surprised"
 		State.LAUNCH: return "determined" if _variant != 2 else "surprised"
 		State.APEX:
-			# Four expressions were drawn; a jump that always pulls the same one
-			# is three of them wasted.
 			if g == LaunchController.Grade.PERFECT:
 				return ["happy", "determined", "happy"][_variant]
 			return "surprised" if _variant == 0 else "worried"
@@ -343,60 +390,13 @@ func _face_for(s: State, g: LaunchController.Grade) -> String:
 	return "happy"
 
 
-var _body_pose := "front"
-
-
-## The sheet drew the animal four times with the limbs in four different
-## places. Swapping which one is standing up is how a cut-out changes its arms
-## and legs - there is nothing to rotate, so the pose has to come from the art.
-func _set_body(pose: String) -> void:
-	var key := "body_" + pose
-	if _body_pose == pose or not _tex.has(key):
-		return
-	_body_pose = pose
-	var bs := _size_of(key)
-	var art := _art_of(_body)
-	(art.mesh as QuadMesh).size = bs
-	(art.material_override as StandardMaterial3D).albedo_texture = _tex[key]
-	# Only present while the paper card is enabled.
-	var back := _body.get_child(0) as MeshInstance3D
-	if back != null and back.material_override is ShaderMaterial:
-		(back.mesh as QuadMesh).size = bs * (1.0 + EDGE_GROW)
-		(back.material_override as ShaderMaterial).set_shader_parameter("shape", _tex[key])
-	_body.position = Vector3(0, bs.y * 0.5, 0)
-	# The head rides on top of whichever body is up, so the collar keeps meeting
-	# the chin no matter which one that is.
-	var hs := _size_of("rig_head_happy")
-	_neck.position = Vector3(0, bs.y - hs.y * NECK_OVERLAP, 0.004)
-
-
-func _body_for(s: State) -> String:
-	match s:
-		State.LAUNCH:
-			return "side" if _variant == 0 else "quarter"
-		State.APEX:
-			return ["front", "quarter", "side"][_variant]
-		State.FALL:
-			return "quarter" if _variant != 2 else "side"
-		State.GLIDE:
-			return "side"
-		State.DASH:
-			return "quarter"
-		State.CHEER:
-			return "quarter" if _variant == 1 else "front"
-	return "front"
-
-
 func _set_face(name: String) -> void:
-	var key := "rig_head_" + name
-	if not _tex.has(key):
+	if not _eyes.has(name):
 		return
-	if _head_mat:
-		_head_mat.albedo_texture = _tex[key]
-	# The card behind has to follow, or the paper edge keeps the old silhouette.
-	var back := _head_quad.get_child(0) as MeshInstance3D
-	if back and back.material_override is ShaderMaterial:
-		(back.material_override as ShaderMaterial).set_shader_parameter("shape", _tex[key])
+	_face = name
+	for k in _eyes:
+		(_eyes[k] as Node3D).visible = k == name
+		(_mouths[k] as Node3D).visible = k == name
 
 
 # ---------------------------------------------------------------------------
@@ -420,17 +420,14 @@ func _process(delta: float) -> void:
 
 	if _hitstop > 0.0:
 		_hitstop -= dt
-		_apply(dt)          # position and shadow still track; the pose holds
+		_apply(dt)
 		return
 
 	_drive(dt)
 	_apply(dt)
 	_follow_through(dt)
-	_update_scarf(dt)
 
 
-## The authored key poses. One target set per state; the springs give the timing,
-## the overshoot and the settle.
 func _drive(dt: float) -> void:
 	var lean := 0.0
 	var squash := 0.0
@@ -438,6 +435,9 @@ func _drive(dt: float) -> void:
 	var head := 0.0
 	var ear := 1.0
 	var fan := 0.0
+	var arm := 0.0
+	var leg := 0.15
+	var asym := 0.0
 	var stiff := 180.0
 	var damp := 17.0
 
@@ -446,8 +446,6 @@ func _drive(dt: float) -> void:
 			squash = sin(_time * 3.0) * 0.045
 			head = sin(_time * 0.8) * 4.0
 			ear = 1.0 + sin(_time * 2.2) * 0.06
-			# An idle that only breathes is a mannequin. Every couple of seconds
-			# it does something small and unrepeated instead.
 			_idle_beat -= dt
 			if _idle_beat <= 0.0:
 				_idle_beat = randf_range(1.4, 3.2)
@@ -455,21 +453,19 @@ func _drive(dt: float) -> void:
 				_variant = randi() % 3
 			_flick = maxf(0.0, _flick - dt * 2.4)
 			match _variant:
-				0:
-					ear += _flick * 0.9                 # ear flick
-				1:
-					head += _flick * 22.0               # look around
-				_:
-					squash -= _flick * 0.16             # a little bob
-					fan = _flick * 0.35
+				0: ear += _flick * 1.1
+				1: head += _flick * 24.0
+				_: arm = _flick * 0.5
 			stiff = 90.0
 
 		State.DASH:
 			var into := clampf(1.0 - _dash_t / Tuning.DASH_TIME, 0.0, 1.0)
-			lean = -_dash_dir.x * 26.0 * into
-			squash = 0.38 * into
-			head = _dash_dir.x * 16.0 * into
+			lean = -_dash_dir.x * 30.0 * into
+			squash = 0.40 * into
+			head = _dash_dir.x * 18.0 * into
 			ear = -0.9
+			arm = -0.9
+			leg = 0.05
 			stiff = 340.0
 			damp = 21.0
 
@@ -477,44 +473,58 @@ func _drive(dt: float) -> void:
 			squash = -0.10
 			lean = sin(_time * 22.0) * 2.6
 			head = 6.0
-			ear = 1.3
+			ear = 1.35
+			arm = 0.35
+			leg = 0.55
 			stiff = 260.0
 
 		State.LAUNCH:
 			squash = 0.85 if grade == LaunchController.Grade.PERFECT else 0.55
-			rise = 0.10
+			rise = 0.08
 			head = -12.0
 			ear = -1.0
+			arm = -1.0
+			leg = 0.0
+			asym = [18.0, -24.0, 6.0][_variant]
 			if grade == LaunchController.Grade.BAD:
 				lean = 34.0
 			stiff = 430.0
 			damp = 20.0
 
 		State.APEX:
-			# The pose the jump exists to show: the drawing opens out, the ears
-			# fan wide, the head tips back, and it hangs there for a beat.
+			# The pose the jump exists to show, in three takes. Each take has to
+			# differ in the silhouette, not only in the face - a mirrored figure
+			# with a different expression is still the same pose.
 			squash = -0.18
-			rise = 0.05
-			lean = -6.0
+			rise = 0.04
 			head = -18.0
 			ear = 0.5
 			fan = 1.0
-			# Three takes on the same beat, so the apex is never the same twice.
+			arm = 1.0
+			leg = 0.85
 			match _variant:
 				0:
-					lean = -6.0 + sin(_time * 2.2) * 5.0    # a slow proud turn
+					# Airborne cheer: one arm punched up, the other trailing.
+					lean = -6.0 + sin(_time * 2.2) * 5.0
+					asym = 46.0
 				1:
-					squash = -0.26                          # wide open, arms out
-					head = -24.0
+					# Tucked and proud: both arms up, body arched back.
+					squash = -0.26
+					head = -26.0
+					arm = 1.0
+					asym = -14.0
 				_:
-					lean = 14.0                             # a cocky back-lean
-					head = -10.0
-			if grade == LaunchController.Grade.GOOD:
-				lean = -16.0
-			elif grade == LaunchController.Grade.BAD:
+					# Cocky back-lean with one leg kicked out.
+					lean = 16.0
+					head = -8.0
+					arm = 0.45
+					leg = 0.45
+					asym = -52.0
+			if grade == LaunchController.Grade.BAD:
 				lean = 150.0 * sin(_time * 2.4)
 				fan = 0.4
-				head = 12.0
+				arm = -0.3
+				asym = 30.0 * sin(_time * 3.1)
 			stiff = 110.0
 			damp = 12.0
 
@@ -523,8 +533,12 @@ func _drive(dt: float) -> void:
 			lean = 8.0
 			head = 14.0
 			ear = 1.1
+			arm = -0.7
+			leg = 0.3
+			asym = [22.0, -30.0, 8.0][_variant]
 			if grade == LaunchController.Grade.BAD:
 				lean = 240.0 * sin(_time * 2.1)
+				asym = 40.0 * sin(_time * 2.6)
 			stiff = 150.0
 
 		State.LAND:
@@ -533,6 +547,9 @@ func _drive(dt: float) -> void:
 			squash = -0.62 * punch
 			ear = 1.0 - 2.4 * punch
 			fan = 0.8 * punch
+			arm = 0.6 * punch
+			leg = 0.15 + 0.7 * punch
+			asym = [26.0, -34.0, 12.0][_variant] * punch
 			if grade == LaunchController.Grade.BAD:
 				lean = 44.0 * punch
 			stiff = 300.0
@@ -544,22 +561,31 @@ func _drive(dt: float) -> void:
 			head = sin(_time * 3.3) * 12.0
 			ear = 0.15
 			fan = 1.0
+			arm = 1.0
+			leg = 0.25
+			# Windmilling: the two arms are a quarter-cycle apart, which is what
+			# flailing looks like and what mirrored arms can never look like.
+			asym = sin(_time * 5.1) * 38.0
 			stiff = 70.0
 			damp = 10.0
 
 		State.CHEER:
 			var hop := absf(sin(_time * 4.2))
 			squash = -0.10 + hop * 0.34
-			rise = hop * 0.16
+			rise = hop * 0.14
 			head = -12.0
 			ear = 1.25
-			fan = 0.5
+			fan = 0.4
+			arm = 1.0
+			asym = sin(_time * 4.2) * 30.0
 			stiff = 130.0
 
 	if _anticipate > 0.0:
 		squash = -0.40
-		rise = -0.05
+		rise = -0.04
 		ear = 1.4
+		leg = 0.85
+		arm = -0.4
 		lean *= -0.3
 
 	_s_lean.step(lean, stiff, damp, dt)
@@ -568,10 +594,13 @@ func _drive(dt: float) -> void:
 	_s_head.step(head, stiff * 0.6, damp * 0.9, dt)
 	_s_ear.step(ear, stiff * 0.5, damp * 0.8, dt)
 	_s_fan.step(fan, stiff * 0.6, damp, dt)
+	_s_arm.step(arm, stiff * 0.7, damp, dt)
+	_s_leg.step(leg, stiff * 0.8, damp, dt)
+	_s_asym.step(asym, stiff * 0.55, damp * 0.9, dt)
 
 
 func _apply(dt: float) -> void:
-	# The paper turn: squash flat, flip, spring back out.
+	# The paper turn: squash flat, flip, spring back.
 	var pinch_target := 1.0 if _facing == _want_facing else 0.0
 	_pinch = move_toward(_pinch, pinch_target, dt * 11.0)
 	if _pinch <= 0.03 and _facing != _want_facing:
@@ -579,15 +608,58 @@ func _apply(dt: float) -> void:
 	if _facing == _want_facing:
 		_pinch = move_toward(_pinch, 1.0, dt * 11.0)
 
-	# Squash and stretch with the area roughly preserved, so it reads as the
-	# drawing deforming rather than as a scale slider.
-	var sy := 1.0 + _s_squash.v * 0.60
-	var sx := 1.0 / maxf(0.25, sy)
-	_rig.scale = Vector3(sx * maxf(0.02, _pinch) * _facing, sy, 1.0)
+	# Volume-preserving squash and stretch, but on the body only.
+	#
+	# Run over the whole rig at +-60% it turned the fennec into a noodle at the
+	# top of every jump: the skull stretched into an egg and the face with it.
+	# Animators stretch the body and hold the head, because the head is what the
+	# player is actually reading. So the scale goes on the hips and the neck
+	# carries the exact inverse - the head rides higher and lower with the
+	# stretch but never changes shape.
+	var sy := 1.0 + clampf(_s_squash.v, -0.8, 0.9) * 0.30
+	var sx := 1.0 / maxf(0.4, sy)
+	_hips.scale = Vector3(sx, sy, 1.0)
+	_neck.scale = Vector3(1.0 / sx, 1.0 / sy, 1.0)
+	# Facing and the paper turn stay on the rig, where they flip the whole figure.
+	_rig.scale = Vector3(maxf(0.02, _pinch) * _facing, 1.0, 1.0)
 	_rig.rotation_degrees = Vector3(0, 0, _s_lean.v)
-	_rig.position.y = _s_rise.v
+	# Scaling about the hips also scales the legs, so a squash would lift the
+	# feet clear of the deck and a stretch would push them through it. On the
+	# ground the rig drops by exactly what the legs lost, which keeps the soles
+	# planted no matter how hard the body compresses.
+	var planted := state in [State.IDLE, State.ARMED, State.LAND, State.DASH,
+			State.CHEER]
+	var foot_fix := (sy - 1.0) * 0.162 * FIGURE_H if planted else 0.0
+	_rig.position.y = _s_rise.v * FIGURE_H + foot_fix
 
 	_head.rotation_degrees.z = _s_head.v + _head_lag.v
+
+	# The asymmetry bias is deliberately *not* multiplied by the side sign. That
+	# is the whole point: multiplying by the sign would mirror it and leave the
+	# figure as symmetric as before. Added flat, it swings both limbs the same
+	# way on screen, which is how one arm ends up over the head while the other
+	# trails behind. The trailing limb takes less of it than the leading one, so
+	# the two never look like a single rigid piece.
+	for i in _legs.size():
+		var lsx := -1.0 if i == 0 else 1.0
+		var splay := 10.0 + 46.0 * _s_leg.v * (0.4 + 0.6 * _s_fan.v)
+		_legs[i].rotation_degrees.z = lsx * splay \
+				+ _s_asym.v * (0.50 if i == 1 else -0.18)
+		_legs[i].position.y = -0.04 * FIGURE_H * _s_leg.v
+
+	for i in _arms.size():
+		var asx := -1.0 if i == 0 else 1.0
+		var a := _s_arm.v
+		var swing := (16.0 + 120.0 * maxf(0.0, a) * (0.45 + 0.55 * _s_fan.v)) \
+				- 50.0 * maxf(0.0, -a)
+		_arms[i].rotation_degrees.z = asx * swing \
+				+ _s_asym.v * (1.0 if i == 1 else -0.42)
+
+	for i in _scarf_ends.size():
+		var ssx := -1.0 if i == 0 else 1.0
+		_scarf_ends[i].rotation_degrees.z = ssx * (6.0 + 26.0 * _s_fan.v) \
+				+ clampf(-_velocity.y * 2.2, -34.0, 34.0) * 0.4 \
+				+ sin(_time * 3.4 + float(i) * 1.9) * 4.0
 
 	var deck_y := _deck_y()
 	var lift: float = maxf(0.0, global_position.y - deck_y)
@@ -595,7 +667,7 @@ func _apply(dt: float) -> void:
 	_shadow.visible = f > 0.02
 	_shadow.global_position = Vector3(global_position.x, deck_y + 0.035, global_position.z)
 	_shadow.scale = Vector3(0.6 + 0.4 * f, 1.0, 0.5 + 0.4 * f)
-	(_shadow.material_override as StandardMaterial3D).albedo_color.a = 0.34 * f
+	(_shadow.material_override as StandardMaterial3D).albedo_color.a = 0.32 * f
 
 
 func _deck_y() -> float:
@@ -606,79 +678,23 @@ func _deck_y() -> float:
 	return 0.0
 
 
-## GDD 14.2 [LOCK]: the ears and the head only ever follow. Driven by how fast
-## the body is actually moving, never by the state machine.
+## GDD 14.2 [LOCK]: ears, head and tail only ever follow the body.
 func _follow_through(dt: float) -> void:
-	_head_lag.step(clampf(-_velocity.x * 2.2, -26.0, 26.0), 130.0, 14.0, dt)
+	_head_lag.step(clampf(-_velocity.x * 2.2, -24.0, 24.0), 130.0, 14.0, dt)
 
-	# The ears are painted into the head plate, so the plate is what carries them.
-	# Alert stretches it tall, a hard dash squashes it back, the apex fans it
-	# wide - the drawn ears follow because they are part of the drawing.
-	#
-	# They used to be separate hinged pieces laid over the painted ones. That put
-	# a second pair on screen the instant the real ones moved, and clamping the
-	# rotation to hide it was concealment, not a fix. One plate cannot double.
-	var alert := clampf(_s_ear.v, -1.0, 1.6)
-	var stretch := 1.0 + alert * 0.10 - _s_fan.v * 0.05
-	var widen := 1.0 - alert * 0.04 + _s_fan.v * 0.15
-	var lag: float = _ear_lag[0].step(clampf(-_velocity.y * 0.9, -18.0, 18.0), 110.0, 12.0, dt)
-	var twitch := sin(_time * 5.4) * 0.006
-	_head_quad.scale = Vector3(widen + twitch, stretch + lag * 0.004 - twitch, 1.0)
+	var vert := clampf(-_velocity.y * 1.5, -55.0, 55.0)
+	var lat := clampf(-_velocity.x * 2.6, -45.0, 45.0)
+	for i in _ears.size():
+		var sx := -1.0 if i == 0 else 1.0
+		var lag: float = _ear_lag[i].step(vert * 0.55 + lat * 0.45, 110.0, 12.0, dt)
+		# Straight up when alert, swept right back when moving fast, fanned wide
+		# at the apex. The shapes are complete, so this can go as far as it likes.
+		var base := lerpf(58.0, -10.0, clampf(_s_ear.v * 0.5 + 0.5, 0.0, 1.0))
+		var twitch := sin(_time * 5.4 + float(i) * 1.7) * 1.5
+		_ears[i].rotation_degrees.z = -sx * (base * 0.42 + _s_fan.v * 30.0) \
+				+ lag * 0.35 + twitch
 
-
-func _update_scarf(dt: float) -> void:
-	if _scarf.is_empty():
-		return
-	var anchor := _neck.global_position + Vector3(0, 0.04, -0.06)
-	if not _scarf_ready:
-		for i in _scarf_p.size():
-			_scarf_p[i] = anchor
-			_scarf_prev[i] = anchor
-		_scarf_ready = true
-
-	var open := 1.0 if state == State.GLIDE else 0.0
-	var drag := 0.90 - 0.14 * open
-	var gravity := Vector3(0, -9.5 + 7.0 * open, 0)
-	var breeze := Vector3(2.4 * sin(_time * 1.9) + 0.9, 0.6, -1.5 - 0.7 * open)
-	var push := -_velocity * (0.85 + 0.8 * open) + breeze
-
-	for i in _scarf_p.size():
-		var cur := _scarf_p[i]
-		var vel := (cur - _scarf_prev[i]) * drag
-		_scarf_prev[i] = cur
-		_scarf_p[i] = cur + vel + (gravity + push) * dt * dt * 30.0
-
-	var grounded := state in [State.IDLE, State.DASH, State.ARMED, State.LAND, State.CHEER]
-	var floor_y := _deck_y() + 0.08
-	for _pass in 2:
-		_scarf_p[0] = anchor
-		for i in range(1, _scarf_p.size()):
-			var a := _scarf_p[i - 1]
-			var d := _scarf_p[i] - a
-			var l := d.length()
-			if l > 1e-5:
-				_scarf_p[i] = a + d / l * SCARF_LEN
-			if grounded and _scarf_p[i].y < floor_y:
-				_scarf_p[i].y = floor_y
-			# Always behind the paper: a ribbon drifting toward the camera
-			# simply erases the character.
-			_scarf_p[i].z = minf(_scarf_p[i].z, global_position.z - 0.05)
-
-	for i in range(1, _scarf.size()):
-		var a2 := _scarf_p[i - 1]
-		var b2 := _scarf_p[i]
-		var mid := (a2 + b2) * 0.5
-		var dir := b2 - a2
-		if dir.length() < 1e-4:
-			dir = Vector3(0, 0, 1)
-		dir = dir.normalized()
-		var up := Vector3.UP if absf(dir.dot(Vector3.UP)) < 0.98 else Vector3.FORWARD
-		_scarf[i].global_position = mid
-		_scarf[i].look_at(mid + dir, up, true)
-	_scarf[0].visible = false
-
-
-
-
-
-
+	var whip: float = _tail_lag.step(clampf(-_velocity.y * 3.0, -60.0, 60.0)
+			- _s_lean.v * 0.6, 95.0, 11.0, dt)
+	_tail.rotation_degrees.z = -18.0 + whip * 0.5 + _s_fan.v * 24.0 \
+			+ sin(_time * 2.6) * 5.0
