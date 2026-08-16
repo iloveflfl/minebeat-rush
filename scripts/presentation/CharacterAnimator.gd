@@ -68,6 +68,7 @@ var _face := "happy"
 # --- the face, as parameters rather than as a set of pictures ---------------
 var _eye_sockets: Array[Node3D] = []
 var _eye_pieces: Array[FoxFace.Piece] = []
+var _iris_pieces: Array[FoxFace.Piece] = []
 var _shine_pieces: Array[FoxFace.Piece] = []
 var _lid_pieces: Array[FoxFace.Piece] = []
 var _mouth_piece: FoxFace.Piece
@@ -105,6 +106,16 @@ var _s_asym := Spring.new()
 var _ear_lag := [Spring.new(), Spring.new()]
 var _tail_lag := Spring.new()
 var _head_lag := Spring.new()
+
+# --- parts that bend rather than pivot ---------------------------------------
+var _ear_strands: Array[FoxChain.Strand] = []
+var _ear_ribbons: Array[FoxChain.Ribbon] = []
+var _tail_strand: FoxChain.Strand
+var _tail_ribbon: FoxChain.Ribbon
+var _scarf_strands: Array[FoxChain.Strand] = []
+var _scarf_ribbons: Array[FoxChain.Ribbon] = []
+## Last frame's velocity, differenced to get the acceleration the strands feel.
+var _prev_velocity := Vector3.ZERO
 
 var _facing := 1.0
 var _want_facing := 1.0
@@ -157,21 +168,14 @@ func _build() -> void:
 		_legs.append(leg)
 
 	# --- tail ----------------------------------------------------------------
-	# Anchored at the hips and drawn first, so it sweeps out from behind the
-	# body. Hung off the torso it rode up to shoulder height and read as a
-	# balloon on a string.
+	# Slim and long with a dark tuft on the end, per the sheet - not the fat
+	# brush it had been drawn as. Simulated, so it trails and curls on its own.
 	_tail = Node3D.new()
-	_tail.position = Vector3(0.058 * S, 0.020 * S, -0.020)
+	_tail.position = Vector3(0.030 * S, 0.020 * S, -0.020)
 	_hips.add_child(_tail)
-	# Thick at the root and barely tapering: a fennec's tail is a brush. Drawn
-	# as a thin stem with a round tip on the end it read as a lollipop.
-	FoxArt.shape(_tail, FoxArt.sweep(Vector2(0, 0), Vector2(0.130, -0.010),
-			Vector2(0.185, 0.120), 0.054, 0.082), FoxArt.FUR, S, 0.0)
-	# The tip is a rounded cap that swallows the whole end of the brush. Drawn
-	# smaller it sat on the tail like a ball on a stick, and its outline crossed
-	# the fur in a straight line that read as a cut.
-	FoxArt.detail(_tail, FoxArt.blob(Vector2(0.183, 0.122), Vector2(0.086, 0.080), 30,
-			0, 0.0, 0.0), FoxArt.TAIL_TIP, S, 0.001)
+	_tail_strand = FoxChain.Strand.new(
+			FoxChain.arc(Vector2.ZERO, -48.0, 34.0, 0.330, 7), 0.42)
+	_tail_ribbon = FoxChain.Ribbon.new(_tail, 0.0, true)
 
 	# --- torso ---------------------------------------------------------------
 	_torso = Node3D.new()
@@ -181,21 +185,27 @@ func _build() -> void:
 	FoxArt.detail(_torso, FoxArt.ellipse(Vector2(0, 0.090), Vector2(0.068, 0.098), 26),
 			FoxArt.BELLY, S, 0.002)
 
-	# --- scarf: a band at the throat with two short tails on the chest -------
-	# The tails used to run the whole height of the torso, which stopped reading
-	# as a scarf and started reading as an open red jacket.
+	# --- scarf ---------------------------------------------------------------
+	# On the sheet this is a long scarf whose two ends reach the floor, banded
+	# near the tips and finished with fringe. It had been drawn as a small
+	# collar, which threw away both the silhouette and the best piece of
+	# secondary motion the character has: two long ends that stream when it
+	# jumps and settle when it lands, entirely on their own.
 	for sx3 in [-1.0, 1.0]:
 		var end := Node3D.new()
-		end.position = Vector3(sx3 * 0.034 * S, 0.252 * S, 0)
+		end.position = Vector3(sx3 * 0.046 * S, 0.250 * S, 0.006)
 		_torso.add_child(end)
-		FoxArt.shape(end, FoxArt.sweep(Vector2(0, 0), Vector2(sx3 * 0.022, -0.055),
-				Vector2(sx3 * 0.020, -0.112), 0.026, 0.016),
-				FoxArt.SCARF, S, 0.006)
+		# Splayed away from the body. Hanging straight down, the two ends covered
+		# the arms and legs and read as a pair of suspenders rather than a scarf.
+		_scarf_strands.append(FoxChain.Strand.new(
+				FoxChain.arc(Vector2.ZERO, -90.0 + sx3 * 32.0, -90.0 + sx3 * 15.0,
+						0.430, 9), 0.10))
+		_scarf_ribbons.append(FoxChain.Ribbon.new(end, 0.0, true))
 		_scarf_ends.append(end)
-	FoxArt.shape(_torso, FoxArt.blob(Vector2(0, 0.265), Vector2(0.098, 0.040), 30),
-			FoxArt.SCARF, S, 0.008)
-	FoxArt.detail(_torso, FoxArt.ellipse(Vector2(0, 0.252), Vector2(0.079, 0.019), 20),
-			FoxArt.SCARF_DARK, S, 0.009)
+	FoxArt.shape(_torso, FoxArt.blob(Vector2(0, 0.265), Vector2(0.098, 0.042), 30),
+			FoxArt.SCARF, S, 0.014)
+	FoxArt.detail(_torso, FoxArt.ellipse(Vector2(0, 0.252), Vector2(0.079, 0.020), 20),
+			FoxArt.SCARF_DARK, S, 0.015)
 
 	# --- arms ----------------------------------------------------------------
 	# In front of the scarf tails. Behind them the arms were completely hidden,
@@ -253,17 +263,16 @@ func _head_build(S: float) -> void:
 	# skull. They go in first so the skull's outline closes over their roots.
 	for sx in [-1.0, 1.0]:
 		var ear := Node3D.new()
-		ear.position = Vector3(sx * 0.078 * S, 0.062 * S, Z.EAR)
+		ear.position = Vector3(sx * 0.062 * S, 0.075 * S, Z.EAR)
 		_head.add_child(ear)
-		# A fennec's ears are broad and splayed, not tall and parallel. At 0.47
-		# high and 0.175 wide they stood straight up like a rabbit's.
-		FoxArt.shape(ear, FoxArt.teardrop(Vector2(0, -0.055), 0.210, 0.345),
-				FoxArt.FUR, S, 0.0)
-		FoxArt.detail(ear, FoxArt.teardrop(Vector2(0, -0.020), 0.122, 0.272),
-				FoxArt.EAR_INNER, S, 0.002)
-		FoxArt.detail(ear, FoxArt.teardrop(Vector2(0, 0.008), 0.064, 0.196),
-				FoxArt.EAR_DEEP, S, 0.003)
-		ear.rotation_degrees.z = -sx * 15.0
+		# On the sheet the ears are as tall as the whole body and only gently
+		# splayed. They are the character's silhouette, and they are simulated
+		# rather than rotated: stiff enough to stand up, loose enough that the
+		# tips lag a beat behind the head and overshoot when it stops.
+		_ear_strands.append(FoxChain.Strand.new(
+				FoxChain.arc(Vector2.ZERO, 90.0 - sx * 13.0, 90.0 - sx * 27.0,
+						0.395, 6), 0.66))
+		_ear_ribbons.append(FoxChain.Ribbon.new(ear, 0.0, true))
 		_ears.append(ear)
 
 	# Skull. The tufts are a gentle waver in the outline, not scallops - at 40
@@ -271,6 +280,16 @@ func _head_build(S: float) -> void:
 	# the head came out faceted, like something chipped from stone.
 	FoxArt.shape(_head, FoxArt.blob(Vector2(0, Z.skull_y), Vector2(0.145, 0.134), 72, 9,
 			0.026, 0.55), FoxArt.FUR, S, Z.SKULL)
+	# Fur tufts: a spike between the ears and a spray on each cheek. They are
+	# small and they are the difference between this fennec and a generic round
+	# animal - the sheet draws them on every single view.
+	_tuft(_head, Vector2(0, 0.176), 0.020, 0.050, 0.0, S)
+	_tuft(_head, Vector2(-0.030, 0.172), 0.017, 0.040, 24.0, S)
+	_tuft(_head, Vector2(0.030, 0.172), 0.017, 0.040, -24.0, S)
+	for cheek in [-1.0, 1.0]:
+		for k in 3:
+			_tuft(_head, Vector2(cheek * (0.132 - k * 0.012), 0.085 - k * 0.045),
+					0.015, 0.044, cheek * (98.0 - k * 12.0), S)
 	for sx2 in [-1.0, 1.0]:
 		FoxArt.detail(_head, FoxArt.ellipse(Vector2(sx2 * 0.098, 0.022),
 				Vector2(0.030, 0.017), 16), FoxArt.BLUSH, S, Z.BLUSH)
@@ -292,10 +311,27 @@ func _head_build(S: float) -> void:
 		socket.position = Vector3(sx3 * 0.058 * S, 0.080 * S, 0)
 		_head.add_child(socket)
 		_eye_pieces.append(FoxFace.Piece.new(socket, FoxArt.EYE, Z.EYE))
+		_iris_pieces.append(FoxFace.Piece.new(socket, FoxArt.IRIS, Z.EYE + 0.002))
 		_shine_pieces.append(FoxFace.Piece.new(socket, FoxArt.EYE_LIGHT, Z.MOUTH))
 		_lid_pieces.append(FoxFace.Piece.new(socket, FoxArt.FUR, Z.LID))
 		_eye_sockets.append(socket)
 	_mouth_piece = FoxFace.Piece.new(_head, FoxArt.NOSE.darkened(0.35), Z.MOUTH, 0.004)
+
+
+## One spike of fur, laid so its base is buried in whatever it grows out of.
+##
+## Drawn behind the skull rather than on it: a tuft that sits on top reads as a
+## sticker, and a tuft poking out from underneath reads as fur.
+func _tuft(parent: Node3D, at: Vector2, w: float, len: float, deg: float,
+		S: float) -> void:
+	var holder := Node3D.new()
+	parent.add_child(holder)
+	holder.position = Vector3(at.x * S, at.y * S, Z.SKULL - 0.002)
+	holder.rotation_degrees.z = deg
+	# Hairline ink. At the character's scale the standard outline weight is wider
+	# than the tuft itself, and a row of them turns into one black smudge.
+	FoxArt.shape(holder, FoxArt.teardrop(Vector2(0, -len * 0.45), w, len, 1.25),
+			FoxArt.FUR, S, 0.0, 0.0045)
 
 
 func _build_shadow() -> void:
@@ -590,6 +626,148 @@ func _drive(dt: float) -> void:
 	_s_leg.step(leg, stiff * 0.8, damp, dt)
 	_s_asym.step(asym, stiff * 0.55, damp * 0.9, dt)
 	_step_face(dt)
+	_step_strands(dt)
+
+
+## Simulate and redraw everything that bends.
+##
+## The pseudo-force is the whole trick. Working in the rig's own frame, the
+## strands' roots never move, so nothing would ever swing. Feeding the
+## character's own acceleration back in with the sign flipped is exactly what a
+## passenger feels in a braking car, and it is why the scarf streams behind on
+## the way up and snaps forward at the top without a single authored frame.
+func _step_strands(dt: float) -> void:
+	if dt <= 0.0:
+		return
+	var accel := (_velocity - _prev_velocity) / maxf(dt, 0.0001)
+	_prev_velocity = _velocity
+	# Clamped, because a teleport between sectors produces an acceleration that
+	# would fire the scarf off into the next canyon.
+	if accel.length() > 90.0:
+		accel = accel.normalized() * 90.0
+	var flip := _facing
+
+	for i in _ear_strands.size():
+		var e := _ear_strands[i]
+		# Ears are light, so they feel their own motion much more than gravity.
+		e.step(dt, Vector2(-accel.x * flip * 0.30, -accel.y * 0.30 + _s_ear.v * 0.9),
+				Vector2(0, -2.2))
+		_draw_ear(i)
+
+	if _tail_strand:
+		_tail_strand.step(dt, Vector2(-accel.x * flip * 0.22, -accel.y * 0.22),
+				Vector2(0, -3.4))
+		_draw_tail()
+
+	for i in _scarf_strands.size():
+		var s := _scarf_strands[i]
+		# The scarf is cloth: it barely resists, so it is almost entirely the
+		# character's motion made visible.
+		s.step(dt, Vector2(-accel.x * flip * 0.55, -accel.y * 0.55), Vector2(0, -7.0))
+		_draw_scarf(i)
+
+
+func _draw_ear(i: int) -> void:
+	var S := FIGURE_H
+	var p := _ear_strands[i].p
+	var n := p.size()
+	var outer := PackedFloat32Array()
+	var inner := PackedFloat32Array()
+	for k in n:
+		var t := float(k) / float(n - 1)
+		# Broad at the skull, tapering to a point: a long narrow blade, which is
+		# what a fennec's ear is and what the sheet draws.
+		var w := 0.118 * (0.62 + 0.38 * sin(PI * (0.26 + 0.58 * t))) * (1.0 - 0.48 * t * t)
+		outer.append(w)
+		inner.append(w * 0.58)
+	var rib := _ear_ribbons[i]
+	rib.begin()
+	rib.ink(FoxChain.ribbon(p, outer, FoxArt.OUTLINE), S, -0.0016)
+	rib.layer(FoxChain.ribbon(p, outer), FoxArt.FUR, S, 0.0)
+	# The pink inside, inset from the rim and stopping short of the tip.
+	var ip := PackedVector2Array()
+	for k in range(0, n - 1):
+		ip.append(p[k].lerp(p[k + 1], 0.30))
+	rib.layer(FoxChain.ribbon(ip, inner), FoxArt.EAR_INNER, S, 0.0018)
+	# Pale streaks up the inside of the ear - the sheet draws two or three on
+	# every view, and without them the ear is a flat pink slot.
+	for lane in [-0.30, 0.34]:
+		var lp := PackedVector2Array()
+		var lw := PackedFloat32Array()
+		for k in range(1, n - 1):
+			var fr: Array = FoxChain.frame_at(p, float(k) / float(n - 1))
+			var pos: Vector2 = fr[0]
+			var nr: Vector2 = fr[2]
+			var t2 := float(k) / float(n - 1)
+			lp.append(pos + nr * inner[k] * lane)
+			lw.append(0.0095 * (1.0 - t2 * 0.7))
+		if lp.size() > 1:
+			rib.layer(FoxChain.ribbon(lp, lw), FoxArt.BELLY, S, 0.0030)
+
+
+func _draw_tail() -> void:
+	var S := FIGURE_H
+	var p := _tail_strand.p
+	var n := p.size()
+	var w := PackedFloat32Array()
+	for k in n:
+		var t := float(k) / float(n - 1)
+		w.append(lerpf(0.030, 0.022, t))
+	var rib := _tail_ribbon
+	rib.begin()
+	rib.ink(FoxChain.ribbon(p, w, FoxArt.OUTLINE), S, -0.0016)
+	rib.layer(FoxChain.ribbon(p, w), FoxArt.FUR, S, 0.0)
+	# The dark tuft on the end, drawn as three splayed spikes rather than a
+	# blob - the sheet's tail finishes in a little brush, not a bead.
+	var fr: Array = FoxChain.frame_at(p, 1.0)
+	var tip: Vector2 = fr[0]
+	var dir: Vector2 = fr[1]
+	for spread in [-26.0, 0.0, 24.0]:
+		var d := dir.rotated(deg_to_rad(spread))
+		var sp := PackedVector2Array([tip - d * 0.026, tip + d * 0.018, tip + d * 0.056])
+		var sw := PackedFloat32Array([0.021, 0.019, 0.006])
+		rib.layer(FoxChain.ribbon(sp, sw), FoxArt.TAIL_TIP, S, 0.0020)
+
+
+func _draw_scarf(i: int) -> void:
+	var S := FIGURE_H
+	var p := _scarf_strands[i].p
+	var n := p.size()
+	var w := PackedFloat32Array()
+	for k in n:
+		w.append(lerpf(0.032, 0.028, float(k) / float(n - 1)))
+	var rib := _scarf_ribbons[i]
+	rib.begin()
+	rib.ink(FoxChain.ribbon(p, w, FoxArt.OUTLINE), S, -0.0016)
+	rib.layer(FoxChain.ribbon(p, w), FoxArt.SCARF, S, 0.0)
+	# Two chevron bands near the end, then the fringe.
+	for band in [0.72, 0.82]:
+		var fr: Array = FoxChain.frame_at(p, band)
+		var pos: Vector2 = fr[0]
+		var dir: Vector2 = fr[1]
+		var nr: Vector2 = fr[2]
+		var tri := PackedVector2Array()
+		for c in 3:
+			var o: float = (float(c) - 1.0) * 0.026
+			tri = PackedVector2Array([
+				pos + nr * (o - 0.012) + dir * 0.012,
+				pos + nr * o - dir * 0.014,
+				pos + nr * (o + 0.012) + dir * 0.012,
+			])
+			rib.layer(tri, FoxArt.SCARF_TRIM, S, 0.0018)
+	var ef: Array = FoxChain.frame_at(p, 1.0)
+	var epos: Vector2 = ef[0]
+	var edir: Vector2 = ef[1]
+	var enr: Vector2 = ef[2]
+	rib.layer(FoxChain.ribbon(
+			PackedVector2Array([epos - edir * 0.020, epos + edir * 0.018]),
+			PackedFloat32Array([0.036, 0.036])), FoxArt.SCARF_DARK, S, 0.0016)
+	for f in 4:
+		var o2: float = (float(f) - 1.5) * 0.020
+		var root := epos + enr * o2 + edir * 0.014
+		rib.layer(FoxChain.ribbon(
+				PackedVector2Array([root, root + edir * 0.052]),
+				PackedFloat32Array([0.009, 0.006])), FoxArt.SCARF, S, 0.0014)
 
 
 ## The face, evaluated rather than selected.
@@ -636,6 +814,15 @@ func _step_face(dt: float) -> void:
 		var at := Vector2(g.x * 0.004, g.y * 0.003)
 		var eye_poly := FoxFace.eye(at, FoxFace.EYE_W, FoxFace.EYE_H, open, bow)
 		_eye_pieces[i].draw(eye_poly, PackedVector2Array(), S)
+		# The amber iris inside the dark rim. Inset by a fixed fraction of the
+		# current aperture so it shrinks with the eye and vanishes into the rim
+		# as the lid closes, rather than being clipped off at some threshold.
+		var iris_amt: float = clampf((open - 0.28) / 0.72, 0.0, 1.0)
+		var iris := FoxFace.eye(at + Vector2(g.x * 0.010, g.y * 0.008),
+				FoxFace.EYE_W * 0.72, FoxFace.EYE_H * 0.80,
+				open * 0.80 * iris_amt, bow)
+		_iris_pieces[i].draw(iris if iris_amt > 0.02 else PackedVector2Array(),
+				PackedVector2Array(), S)
 		# The catchlight is what the gaze is actually readable through.
 		var shine_open: float = clampf((open - 0.35) / 0.65, 0.0, 1.0)
 		var shine := FoxFace.lid(at + Vector2(sx * 0.010 + g.x * 0.013,
@@ -654,7 +841,7 @@ func _step_face(dt: float) -> void:
 		var rest := FoxFace.eye_top(open, bow) + LID_RY + 0.010
 		_lid_pieces[i].node.rotation_degrees.z = sx * lv * 24.0
 		_lid_pieces[i].draw(
-				FoxFace.lid(Vector2(0, rest - 0.036 * absf(lv)), 0.044, LID_RY),
+				FoxFace.lid(Vector2(0, rest - 0.025 * absf(lv)), 0.044, LID_RY),
 				PackedVector2Array(), S)
 
 	if _mouth_piece:
@@ -755,10 +942,10 @@ func _apply(dt: float) -> void:
 				+ _s_asym.v * (1.0 if i == 1 else -0.42)
 
 	for i in _scarf_ends.size():
+		# Only the anchor is posed. Where the rest of the scarf goes is the
+		# simulation's business, and it is far better at it than a sine was.
 		var ssx := -1.0 if i == 0 else 1.0
-		_scarf_ends[i].rotation_degrees.z = ssx * (6.0 + 26.0 * _s_fan.v) \
-				+ clampf(-_velocity.y * 2.2, -34.0, 34.0) * 0.4 \
-				+ sin(_time * 3.4 + float(i) * 1.9) * 4.0
+		_scarf_ends[i].rotation_degrees.z = ssx * (4.0 + 16.0 * _s_fan.v)
 
 	var deck_y := _deck_y()
 	var lift: float = maxf(0.0, global_position.y - deck_y)
@@ -778,22 +965,23 @@ func _deck_y() -> float:
 
 
 ## GDD 14.2 [LOCK]: ears, head and tail only ever follow the body.
+##
+## Only the *voluntary* part is left here - where the character is choosing to
+## point its ears and tail. All the follow-through this function used to
+## compute, the lag and the whip driven off velocity, now comes out of the
+## strand simulation instead. Doing both was double-counting the same physics
+## and fighting itself: a spring pulling the whole ear one way while the ear's
+## own points were already lagging the other.
 func _follow_through(dt: float) -> void:
 	_head_lag.step(clampf(-_velocity.x * 2.2, -24.0, 24.0), 130.0, 14.0, dt)
 
-	var vert := clampf(-_velocity.y * 1.5, -55.0, 55.0)
-	var lat := clampf(-_velocity.x * 2.6, -45.0, 45.0)
 	for i in _ears.size():
 		var sx := -1.0 if i == 0 else 1.0
-		var lag: float = _ear_lag[i].step(vert * 0.55 + lat * 0.45, 110.0, 12.0, dt)
-		# Straight up when alert, swept right back when moving fast, fanned wide
-		# at the apex. The shapes are complete, so this can go as far as it likes.
-		var base := lerpf(58.0, -10.0, clampf(_s_ear.v * 0.5 + 0.5, 0.0, 1.0))
-		var twitch := sin(_time * 5.4 + float(i) * 1.7) * 1.5
-		_ears[i].rotation_degrees.z = -sx * (base * 0.42 + _s_fan.v * 30.0) \
-				+ lag * 0.35 + twitch
+		# Straight up when alert, swept back when moving fast, fanned wide at the
+		# apex. The strand supplies the bend; this only aims the root.
+		var base := lerpf(52.0, -8.0, clampf(_s_ear.v * 0.5 + 0.5, 0.0, 1.0))
+		var twitch := sin(_time * 5.4 + float(i) * 1.7) * 1.4
+		_ears[i].rotation_degrees.z = -sx * (base * 0.42 + _s_fan.v * 26.0) + twitch
 
-	var whip: float = _tail_lag.step(clampf(-_velocity.y * 3.0, -60.0, 60.0)
-			- _s_lean.v * 0.6, 95.0, 11.0, dt)
-	_tail.rotation_degrees.z = -18.0 + whip * 0.5 + _s_fan.v * 24.0 \
-			+ sin(_time * 2.6) * 5.0
+	if _tail:
+		_tail.rotation_degrees.z = -14.0 + _s_fan.v * 22.0 - _s_lean.v * 0.35

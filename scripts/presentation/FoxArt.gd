@@ -20,19 +20,25 @@ extends RefCounted
 ## and its centre line at x = 0.
 
 # --- palette, read off the reference -----------------------------------------
-const FUR := Color(0.941, 0.835, 0.659)
-const FUR_SHADE := Color(0.890, 0.745, 0.541)
-const BELLY := Color(1.000, 0.973, 0.918)
-const EAR_INNER := Color(0.969, 0.753, 0.659)
-const EAR_DEEP := Color(0.937, 0.663, 0.561)
-const INK := Color(0.145, 0.114, 0.094)
-const SCARF := Color(0.784, 0.224, 0.173)
-const SCARF_DARK := Color(0.639, 0.165, 0.125)
-const TAIL_TIP := Color(0.541, 0.353, 0.196)
-const NOSE := Color(0.851, 0.439, 0.369)
-const EYE := Color(0.227, 0.141, 0.094)
+const FUR := Color(0.960, 0.855, 0.686)
+const FUR_SHADE := Color(0.898, 0.769, 0.573)
+const BELLY := Color(1.000, 0.976, 0.933)
+const EAR_INNER := Color(0.976, 0.784, 0.729)
+const EAR_DEEP := Color(0.949, 0.686, 0.616)
+const INK := Color(0.157, 0.118, 0.098)
+const SCARF := Color(0.855, 0.290, 0.235)
+const SCARF_DARK := Color(0.722, 0.216, 0.176)
+## The lighter red the chevron banding on the scarf ends is picked out in.
+const SCARF_TRIM := Color(0.957, 0.639, 0.573)
+const TAIL_TIP := Color(0.549, 0.361, 0.220)
+const NOSE := Color(0.898, 0.612, 0.573)
+## The eye is not a black dot. On the reference it is a dark rim around a warm
+## amber iris with two white catchlights, and that is most of what makes the
+## face read as looking at something rather than as having two holes in it.
+const EYE := Color(0.259, 0.157, 0.106)
+const IRIS := Color(0.722, 0.420, 0.129)
 const EYE_LIGHT := Color(1, 1, 1)
-const BLUSH := Color(0.976, 0.706, 0.639)
+const BLUSH := Color(0.976, 0.729, 0.667)
 
 const OUTLINE := 0.011
 
