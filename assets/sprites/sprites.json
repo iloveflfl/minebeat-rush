@@ -78,19 +78,19 @@
     },
     "rig_head_happy": {
       "w": 288,
-      "h": 267
+      "h": 246
     },
     "rig_head_surprised": {
       "w": 288,
-      "h": 267
+      "h": 246
     },
     "rig_head_determined": {
       "w": 288,
-      "h": 267
+      "h": 246
     },
     "rig_head_worried": {
       "w": 288,
-      "h": 267
+      "h": 246
     },
     "rig_ear_l": {
       "w": 134,
@@ -119,7 +119,7 @@
       "h": 267,
       "split": 0.44,
       "head_w": 288,
-      "head_h": 267
+      "head_h": 246
     }
   }
 }

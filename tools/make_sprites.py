@@ -1,4 +1,4 @@
-﻿"""
+"""
 Cut the fennec concept sheet into Paper-Mario-style flat sprites.
 
 The sheet is a 4x2 grid: four full-body views on top (front, three-quarter,
@@ -260,15 +260,17 @@ def cut_rig_parts(faces):
     # outline all the way round, and leaving its bottom edge on meant that black
     # line sat across the chest as a visible seam. Cut above it and the body's
     # own collar simply continues underneath.
-    trimmed = {}
-    for name, a in faces.items():
-        h = a.shape[0]
-        m = np.zeros(a.shape[:2], bool)
-        m[:] = a[..., 3] > 0
-        collar = scarf_row(a[..., :3].astype(np.int16), m, 0, h, 0, a.shape[1],
-                           (0.55, 1.0))
-        cut_at = h if collar is None else min(h, collar + int(h * 0.07))
-        trimmed[name] = a[:cut_at]
+    # The plate is cut at the chin, ABOVE the painted collar.
+    #
+    # Leaving the collar on the head meant the character wore two of them - one
+    # drawn on the head plate, one drawn on the body plate - at slightly
+    # different scales, and the head's bottom edge then cut a hard line straight
+    # across the neck. A detector was tried and disagreed with itself across the
+    # four expressions; they are drawn at one scale, so a fixed proportion is the
+    # measurement. One collar, on the body, covering the join.
+    COLLAR_FRAC = 0.075
+    trimmed = {name: a[:int(a.shape[0] * (1.0 - COLLAR_FRAC))]
+               for name, a in faces.items()}
 
     cw = max(t.shape[1] for t in trimmed.values())
     ch = max(t.shape[0] for t in trimmed.values())

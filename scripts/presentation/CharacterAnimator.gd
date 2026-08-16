@@ -28,7 +28,7 @@ const FIGURE_H := 2.35
 ## head's height. Hides the joint.
 ## The head plate ends in the painted collar and the body plate begins with one.
 ## Sinking the head this far in lands red on red, so the join never shows.
-const NECK_OVERLAP := 0.07
+const NECK_OVERLAP := 0.05
 const SCARF_SEGMENTS := 9
 const SCARF_LEN := 0.17
 
@@ -119,7 +119,7 @@ func _load_art() -> void:
 	# One scale for every piece, so the cut-out reassembles at exactly the
 	# proportions it was drawn at.
 	var body_h := float((_meta.get("body_front", {}) as Dictionary).get("h", 309))
-	var head_h := float((_meta.get("rig_head_happy", {}) as Dictionary).get("h", 267))
+	var head_h := float((_meta.get("rig_head_happy", {}) as Dictionary).get("h", 247))
 	# The head plate carries its own ears now, so the figure is body plus head -
 	# adding the ear piece again would count them twice and shrink everything.
 	var stack := body_h + head_h * (1.0 - NECK_OVERLAP)
