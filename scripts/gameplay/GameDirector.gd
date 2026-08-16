@@ -36,6 +36,8 @@ var _cycle_beat := 0.0              ## landing GO of the sector being played
 var _sector_index := -1
 var _damage_fired := 0
 var _air_phase_fired := 0
+## Development only: auto-play deliberately fails every Nth sector (`--miss N`).
+var _miss_every := 0
 var _armed := false
 
 # --- run record (GDD 22.2) --------------------------------------------------
@@ -168,6 +170,12 @@ func _parse_dev_args() -> void:
 					_shot_beat_step = float(args[i + 1])
 			"--auto":
 				_auto_play = true
+			"--miss":
+				# Auto-play never misses, so the whole failure path - bad grade,
+				# the scarf glide, the collapse camera - was unreachable from a
+				# capture run and went unverified for that reason alone.
+				if i + 1 < args.size():
+					_miss_every = int(args[i + 1])
 			"--no-vfx":
 				_no_vfx = true
 			"--closeup":
@@ -181,6 +189,8 @@ func _parse_dev_args() -> void:
 ## test of the loop rather than a bypass of it.
 func _auto_step() -> void:
 	if player.is_dashing() or _sector_index < 0:
+		return
+	if _miss_every > 0 and _sector_index % _miss_every == 0:
 		return
 	var g: MineGrid = stage.grids[_sector_index]
 	var d := g.min_dashes_to_mine(player.cell)
