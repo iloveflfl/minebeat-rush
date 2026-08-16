@@ -18,6 +18,27 @@ $Worktree = 'S:\GameDev\_minebeat_pages'
 
 Set-Location $Root
 
+## Run git and judge it by its exit code.
+##
+## Git writes routine notices to stderr - line-ending warnings, worktree
+## progress - and with ErrorActionPreference = 'Stop' PowerShell turns any of
+## them into a terminating NativeCommandError. Two deploys died that way after
+## the build had already succeeded.
+## Note the deliberate absence of `2>&1`. Redirecting a native command's stderr
+## is itself what raises NativeCommandError in Windows PowerShell 5.1 - it wraps
+## each line in an ErrorRecord - so capturing the output to inspect it is what
+## breaks. Let git talk to the console and read only its exit code.
+function Invoke-Git {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & git @args
+        if ($LASTEXITCODE -ne 0) { throw "git $($args -join ' ') failed ($LASTEXITCODE)" }
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+}
+
 # --- version ---------------------------------------------------------------
 $verFile = Join-Path $Root 'VERSION'
 if (-not (Test-Path $verFile)) { '0.1.0' | Set-Content $verFile -Encoding utf8 -NoNewline }
@@ -56,29 +77,33 @@ Write-Host "   $mb MB"
 New-Item -ItemType File -Force (Join-Path $Build '.nojekyll') | Out-Null
 
 # --- commit the source -----------------------------------------------------
+# Every git call goes through Invoke-Git. Git writes routine notices to stderr -
+# line-ending warnings, worktree progress - and under ErrorActionPreference =
+# 'Stop' PowerShell turns any of them into a terminating NativeCommandError. The
+# exit code decides success here, not whether git happened to say anything.
 Write-Host "-- commit + tag" -ForegroundColor Yellow
-git add -A
+Invoke-Git add -A
 if (git status --porcelain) {
-    git commit -q -m "Release v$version"
+    Invoke-Git commit -q -m "Release v$version"
 }
-if (-not (git tag -l "v$version")) { git tag "v$version" }
-git push -q origin HEAD --tags
+if (-not (git tag -l "v$version")) { Invoke-Git tag "v$version" }
+Invoke-Git push -q origin HEAD --tags
 
 # --- publish the build to gh-pages ----------------------------------------
 Write-Host "-- publish gh-pages" -ForegroundColor Yellow
 if (Test-Path $Worktree) { git worktree remove --force $Worktree 2>$null | Out-Null }
 if (git ls-remote --heads origin gh-pages) {
-    git worktree add -f $Worktree gh-pages | Out-Null
+    Invoke-Git worktree add -f $Worktree gh-pages
 } else {
-    git worktree add -f --detach $Worktree | Out-Null
-    git -C $Worktree checkout --orphan gh-pages | Out-Null
+    Invoke-Git worktree add -f --detach $Worktree
+    Invoke-Git -C $Worktree checkout --orphan gh-pages
     git -C $Worktree rm -rq --cached . 2>$null | Out-Null
 }
 Get-ChildItem $Worktree -Exclude '.git' -Force | Remove-Item -Recurse -Force
 Copy-Item "$Build\*" $Worktree -Recurse -Force
-git -C $Worktree add -A
-git -C $Worktree commit -q -m "Deploy v$version" --allow-empty
-git -C $Worktree push -q -f origin gh-pages
+Invoke-Git -C $Worktree add -A
+Invoke-Git -C $Worktree commit -q -m "Deploy v$version" --allow-empty
+Invoke-Git -C $Worktree push -q -f origin gh-pages
 git worktree remove --force $Worktree
 
 $url = "https://$((git remote get-url origin) -replace '.*github\.com[:/]([^/]+)/(.+?)(\.git)?$', '$1.github.io/$2')/"
