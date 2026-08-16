@@ -39,6 +39,25 @@ function Invoke-Git {
     }
 }
 
+## The same treatment for Godot, for the same reason.
+##
+## Godot writes notices to stderr too - an unreadable editor settings file on
+## this machine, among others - and one of them killed a release after the tests
+## had passed. What decides success here is the exit code and whether the build
+## actually appeared, both of which are checked below.
+function Invoke-Godot {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $Godot @args
+        if ($LASTEXITCODE -ne 0) {
+            throw "godot $($args -join ' ') failed ($LASTEXITCODE)"
+        }
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+}
+
 # --- version ---------------------------------------------------------------
 $verFile = Join-Path $Root 'VERSION'
 if (-not (Test-Path $verFile)) { '0.1.0' | Set-Content $verFile -Encoding utf8 -NoNewline }
@@ -67,7 +86,8 @@ Write-Host "   $($summary.Trim())"
 Write-Host "-- export web" -ForegroundColor Yellow
 if (Test-Path $Build) { Remove-Item -Recurse -Force $Build -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force $Build | Out-Null
-& $Godot --headless --path $Root --export-release 'Web' (Join-Path $Build 'index.html') | Out-Null
+Invoke-Godot --headless --path $Root --export-release 'Web' `
+    (Join-Path $Build 'index.html') | Out-Null
 if (-not (Test-Path (Join-Path $Build 'index.wasm'))) { throw "export produced no wasm" }
 $mb = [math]::Round(((Get-ChildItem $Build | Measure-Object Length -Sum).Sum / 1MB), 1)
 Write-Host "   $mb MB"
